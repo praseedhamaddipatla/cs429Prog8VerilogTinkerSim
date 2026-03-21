@@ -1,6 +1,6 @@
 module decoder(
     input [31:0] instr,
-    output reg [4:0] raddr1
+    output reg [4:0] raddr1,
     output reg [4:0] raddr2,
     output reg [4:0] waddr,
     output reg [63:0] immediate,
@@ -34,10 +34,9 @@ localparam DIVF = 5'd13;
 
 always @(*) begin
     //reset
-    raddr=5'd0;
+    raddr1=5'd0;
     raddr2=5'd0;
     waddr=5'd0;
-    imm=64'd0;
     op=ADD;
     use_imm=0;
     write=0;
@@ -214,6 +213,7 @@ always @(*) begin
     end
 
         default: begin
+        end
     endcase
 end
 

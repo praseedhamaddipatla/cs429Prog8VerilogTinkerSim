@@ -9,4 +9,4 @@ iverilog -g2012 -o sim \
 vvp sim
 
 # open waveform viewer
-gtkwave wave.vcd
+#gtkwave wave.vcd
