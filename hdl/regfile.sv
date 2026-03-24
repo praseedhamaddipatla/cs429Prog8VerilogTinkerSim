@@ -1,29 +1,30 @@
 module reg_file(
+    input clk,
+    input reset,
     input [63:0] data,
     input [4:0] raddr1,
     input [4:0] raddr2,
     input [4:0] waddr,
-    input clk,
     input write,
-    output reg [63:0] r1,
-    output reg [63:0] r2
+    output [63:0] r1,
+    output [63:0] r2
 );
 
-    reg [63:0] registers [0:31];
+reg [63:0] registers [0:31];
 
-    integer i;
-    initial begin
-        for(i=0; i<32; i=i+1)
-            registers[i]=64'd0;
+// reads are combinational so the alu sees register values in the same cycle
+assign r1 = registers[raddr1];
+assign r2 = registers[raddr2];
+
+integer i;
+always @(posedge clk) begin
+    if (reset) begin
+        for (i = 0; i < 32; i = i + 1)
+            registers[i] <= 64'd0;
+        // tinker_core overwrites registers[31] with MEM_SIZE on the same reset edge
+    end else if (write) begin
+        registers[waddr] <= data;
     end
-
-    assign r1=registers[raddr1];
-    assign r2=registers[raddr2];
-
-    always @(posedge clk) begin
-        if (write) begin
-            registers[waddr]<=data;
-        end
-    end
+end
 
 endmodule

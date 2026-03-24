@@ -1,9 +1,13 @@
 #!/bin/bash
 set -e
 
-# compile all SystemVerilog files
-iverilog -g2012 -o hw8 \
-    *.sv
+mkdir -p sim vvp
 
-# run simulation
-vvp hw8
+iverilog -g2012 -o vvp/hw8.vvp \
+    tinker.sv \
+    alu.sv \
+    decoder.sv \
+    regfile.sv \
+    test/testbench.sv
+
+vvp vvp/hw8.vvp
