@@ -1,8 +1,8 @@
 `define MEM_SIZE (512 * 1024)
 `define PC_START 64'h2000
 
-// fetch module - owns the program counter
-// pc updates on the rising edge after the current instruction executes
+// fetch module - owns pc
+// pc updates on the rising edge after current instr finishes
 module fetch (
     input clk,
     input reset,
@@ -26,8 +26,8 @@ module fetch (
 endmodule
 
 
-// memory module - byte-addressable, little-endian
-// has two ports: one for instruction fetch (read-only) and one for data load/store
+// memory module
+// has two ports: one for instr fetch and one for data load/store
 module mem_module #(
     parameter MEM_SIZE = 512 * 1024
 ) (
@@ -42,8 +42,7 @@ module mem_module #(
 
   reg [7:0] bytes[0:MEM_SIZE-1];
 
-  // little-endian: lowest address holds the least significant byte
-  // reconstruct the 32-bit instruction by putting byte 0 in the low bits
+  // little-endian
   assign instr_out = {
     bytes[fetch_addr+3], bytes[fetch_addr+2], bytes[fetch_addr+1], bytes[fetch_addr]
   };
@@ -114,13 +113,13 @@ module tinker_core (
     else if (is_halt) halted <= 1;
   end
 
-  // brgt needs a third register read; reg_file only has two ports so we tap the array directly
+  // brgt needs a third register read; use array directly
   wire [63:0] rt_val = reg_file.registers[rt_addr];
 
   // brnz: jump if data2 (rs) is nonzero, target is data1 (rd)
   wire brnz_taken = is_branch && !is_brgt && (data2 != 64'd0);
 
-  // brgt: jump if data2 (rs) > rt_val (rt), both treated as signed
+  // brgt: jump if data2 (rs) > rt_val (rt), both signed
   wire brgt_taken = is_branch && is_brgt && ($signed(data2) > $signed(rt_val));
 
   wire branch_taken_any = brnz_taken || brgt_taken || is_jump;

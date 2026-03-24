@@ -5,11 +5,7 @@ module alu (
     output reg [63:0] result
 );
 
-  // ieee 754 double precision format:
-  // bit 63 = sign, bits 62:52 = biased exponent (bias=1023), bits 51:0 = mantissa
-  // the leading 1 of the mantissa is implicit and not stored
-
-  // fp add / subtract
+  // fp add / sub
   // passing do_sub=1 flips the sign of y
   function automatic [63:0] fp_add;
     input [63:0] x, y;
@@ -18,25 +14,25 @@ module alu (
     reg [10:0] ex, ey, er;
     reg [52:0] mx, my;  // 53 bits with the implicit leading 1 restored
     reg [10:0] ediff;
-    reg [53:0] ax, ay;  // one extra guard bit for alignment shifts
+    reg [53:0] ax, ay;  // extra guard bit for alignment shifts
     reg [54:0] sum;
     reg [52:0] mr;
     integer k;
     begin
       sx = x[63];
       ex = x[62:52];
-      mx = {1'b1, x[51:0]};
+      mx = {1'b1, x[51:0]}; //add implicit 1 back to mantissa
       sy = y[63];
       ey = y[62:52];
       my = {1'b1, y[51:0]};
-      sy = sy ^ do_sub;  // flip sign of y to implement subtraction
+      sy = sy ^ do_sub;  // flip sign of y for sub
 
       if (ex == 0) begin
         fp_add = {sy, ey, my[51:0]};
       end else if (ey == 0) begin
         fp_add = {sx, ex, mx[51:0]};
       end else begin
-        // align mantissas: shift the one with the smaller exponent right
+        // align mantissas: shift num with smaller exponent right
         if (ex >= ey) begin
           ediff = ex - ey;
           ax = {1'b0, mx};
@@ -49,7 +45,7 @@ module alu (
           er = ey;
         end
 
-        // add magnitudes if signs match, subtract if they differ
+        // add magnitudes if signs match, subtract if differ
         if (sx == sy) begin
           sum = ax + ay;
           sr  = sx;
@@ -63,13 +59,13 @@ module alu (
           end
         end
 
-        // normalize: find the leading 1 and adjust exponent accordingly
+        // normalize: find the leading 1 and adjust exp
         if (sum == 0) begin
           fp_add = 64'd0;
         end else begin
           mr = sum[52:0];
           if (sum[54] || sum[53]) begin
-            // overflow into the carry bit: shift right and bump exponent
+            // overflow into the carry bit: shift right and bump exp
             mr = sum[54:2];
             er = er + 1;
           end else begin
@@ -93,7 +89,7 @@ module alu (
     reg sx, sy, sr;
     reg [10:0] ex, ey, er;
     reg [52:0] mx, my;
-    reg [105:0] prod;  // 53-bit * 53-bit product needs up to 106 bits
+    reg [105:0] prod;  // 53-bit * 53-bit so max 106 bits
     reg [ 52:0] mr;
     begin
       sx = x[63];
@@ -107,10 +103,10 @@ module alu (
       if (ex == 0 || ey == 0) begin
         fp_mul = 64'd0;
       end else begin
-        // add biased exponents then subtract one bias to get the result exponent
+        // add biased exp then sub one bias
         er   = ex + ey - 11'd1023;
         prod = mx * my;
-        // the product's leading 1 lands at bit 105 or 104 depending on overflow
+        // leading 1 lands at bit 105 or 104
         if (prod[105]) begin
           mr = prod[104:52];
           er = er + 1;
@@ -123,7 +119,7 @@ module alu (
   endfunction
 
   // fp divide
-  // shift the numerator left 53 bits before integer division to preserve precision
+  // shift the numerator left 53 bits before integer div
   function automatic [63:0] fp_div;
     input [63:0] x, y;
     reg sx, sy, sr;
@@ -141,17 +137,17 @@ module alu (
       sr = sx ^ sy;
 
       if (ey == 0 || my == 0) begin
-        // divide by zero: return infinity (max exponent, zero mantissa)
+        // div by zero: return inf
         fp_div = {sr, 11'h7FF, 52'd0};
       end else if (ex == 0 || mx == 0) begin
         fp_div = 64'd0;
       end else begin
-        // subtract biased exponents then add bias back
+        // subtract biased exp then add bias back
         er  = ex - ey + 11'd1023;
-        num = {mx, 53'd0};  // shift left to keep fractional precision
+        num = {mx, 53'd0};  // shift left for precision
         mr  = num / my;
         if (!mr[52]) begin
-          // leading 1 is one place too low, shift and adjust exponent
+          // leading 1 is one place too low, shift and adjust exp
           mr = mr << 1;
           er = er - 1;
         end

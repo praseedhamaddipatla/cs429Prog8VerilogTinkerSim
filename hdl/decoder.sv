@@ -9,22 +9,22 @@ module decoder (
     output reg write,
     output reg is_load,
     output reg is_store,
-    output reg is_branch,   // conditional: brnz, brgt
-    output reg is_brgt,     // brgt needs a third register comparison
-    output reg is_jump,     // unconditional: br, brr, call, return
+    output reg is_branch,   // brnz, brgt
+    output reg is_brgt,     // brgt needs a third reg
+    output reg is_jump,     // br, brr, call, return
     output reg is_brr_reg,  // brr rd: pc = pc + rd
     output reg is_brr_imm,  // brr L:  pc = pc + L
     output reg is_return,   // return: pc = mem[r31-8]
-    output reg is_call,     // call: push return addr to stack, jump to rd
+    output reg is_call,     // call
     output reg is_halt,
     output reg is_mov_reg,  // mov rd, rs
-    output reg is_mov_imm,  // mov rd, L - only sets lower 12 bits
+    output reg is_mov_imm,  // mov rd, L
     output reg is_priv,
     output reg [11:0] priv_L,
-    output reg [4:0] rt_addr  // third register for brgt
+    output reg [4:0] rt_addr  // third reg for brgt
 );
 
-  // pull fields out of the 32-bit instruction word
+  // get fields
   wire [ 4:0] opcode = instr[31:27];
   wire [ 4:0] rd = instr[26:22];
   wire [ 4:0] rs = instr[21:17];
@@ -36,7 +36,7 @@ module decoder (
   // zero-extended immediate: used for shifts and mov rd,L where L is always positive
   wire [63:0] imm_unsigned = {52'd0, imm12};
 
-  // alu op selectors - must match the case numbers in alu.sv
+  // alu op selectors
   localparam ADD = 5'd0;
   localparam SUB = 5'd1;
   localparam MUL = 5'd2;
@@ -53,7 +53,7 @@ module decoder (
   localparam DIVF = 5'd13;
 
   always @(*) begin
-    // default everything to zero/no-op so we don't get inferred latches
+    // default everything to zero/no-op
     raddr1     = 5'd0;
     raddr2     = 5'd0;
     waddr      = 5'd0;
@@ -141,39 +141,38 @@ module decoder (
       end
 
       // control flow
-      5'h08: begin  // br rd  -- jump to address in rd
+      5'h08: begin  // br rd; jump to address in rd
         raddr1  = rd;
         is_jump = 1;
       end
-      5'h09: begin  // brr rd  -- pc = pc + rd
+      5'h09: begin  // brr rd; pc = pc + rd
         raddr1 = rd;
         is_jump = 1;
         is_brr_reg = 1;
       end
-      5'h0A: begin  // brr L  -- pc = pc + L (signed offset)
+      5'h0A: begin  // brr L; pc = pc + L (signed offset)
         immediate = imm_signed;
         is_jump = 1;
         is_brr_imm = 1;
       end
-      5'h0B: begin  // brnz rd, rs  -- if rs != 0: pc = rd
-        // rd holds the jump target, rs holds the value to test
+      5'h0B: begin  // brnz rd, rs; if rs != 0: pc = rd
         raddr1 = rd;
         raddr2 = rs;
         is_branch = 1;
       end
-      5'h0C: begin  // call rd  -- mem[r31-8] = pc+4, pc = rd
+      5'h0C: begin  // call rd; mem[r31-8] = pc+4, pc = rd
         raddr1  = rd;
         is_jump = 1;
         is_call = 1;
       end
-      5'h0D: begin  // return  -- pc = mem[r31-8]
+      5'h0D: begin  // return; pc = mem[r31-8]
         is_jump   = 1;
         is_return = 1;
       end
-      5'h0E: begin  // brgt rd, rs, rt  -- if rs > rt (signed): pc = rd
-        raddr1 = rd;  // jump target
-        raddr2 = rs;  // left comparand
-        rt_addr = rt;  // right comparand, core reads this as a third register
+      5'h0E: begin  // brgt rd, rs, rt; if rs > rt (signed): pc = rd
+        raddr1 = rd;
+        raddr2 = rs; 
+        rt_addr = rt;
         is_branch = 1;
         is_brgt = 1;
       end
@@ -190,29 +189,28 @@ module decoder (
       end
 
       // data movement
-      5'h10: begin  // mov rd, (rs)(L)  -- load rd from memory
-        // L is sign-extended because it's an address offset (can be negative)
+      5'h10: begin  // mov rd, (rs)(L); load rd from mem
+        // L is sign-extended
         raddr1 = rs;
         waddr = rd;
         immediate = imm_signed;
         is_load = 1;
         write = 1;
       end
-      5'h11: begin  // mov rd, rs  -- register copy
+      5'h11: begin  // mov rd, rs; register copy
         raddr1 = rs;
         waddr = rd;
         is_mov_reg = 1;
         write = 1;
       end
-      5'h12: begin  // mov rd, L  -- set lower 12 bits of rd, upper 52 unchanged
-        // we read rd so the core can merge the upper bits with L
+      5'h12: begin  // mov rd, L; set lower 12 bits of rd, upper 52 unchanged
         raddr1 = rd;
         waddr = rd;
         immediate = imm_unsigned;  // L is unsigned here
         is_mov_imm = 1;
         write = 1;
       end
-      5'h13: begin  // mov (rd)(L), rs  -- store rs to memory
+      5'h13: begin  // mov (rd)(L), rs; store rs to memory
         raddr1 = rd;  // base address
         raddr2 = rs;  // value to store
         immediate = imm_signed;
@@ -257,7 +255,7 @@ module decoder (
         op = ADD;
         write = 1;
       end
-      5'h19: begin  // addi rd, L  -- rd = rd + L (signed)
+      5'h19: begin  // addi rd, L; rd = rd + L (signed)
         raddr1 = rd;
         waddr = rd;
         immediate = imm_signed;
@@ -272,7 +270,7 @@ module decoder (
         op = SUB;
         write = 1;
       end
-      5'h1B: begin  // subi rd, L  -- rd = rd - L (signed)
+      5'h1B: begin  // subi rd, L; rd = rd - L (signed)
         raddr1 = rd;
         waddr = rd;
         immediate = imm_signed;
