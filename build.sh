@@ -2,11 +2,8 @@
 set -e
 
 # compile all SystemVerilog files
-iverilog -g2012 -o sim \
+iverilog -g2012 -o hw8 \
     *.sv
 
 # run simulation
-vvp sim
-
-# open waveform viewer
-#gtkwave wave.vcd
+vvp hw8

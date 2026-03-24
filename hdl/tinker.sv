@@ -1,4 +1,4 @@
-module tinker_sim(input clk, input [31:0] instr);
+module tinker(input clk, input [31:0] instr);
 
     //wires
     wire [4:0] raddr1, raddr2, waddr;

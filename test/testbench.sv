@@ -1,9 +1,9 @@
-module testing;
+module testbench;
 
 reg clk;
 reg [31:0] instr;
 
-tinker_sim cpu(clk, instr);
+tinker cpu(clk, instr);
 
 // clk
 always #5 clk = ~clk;
