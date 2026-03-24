@@ -97,7 +97,7 @@ module tinker_core (
   wire is_return, is_call;
   wire is_halt;
   wire is_mov_reg, is_mov_imm;
-  wire is_priv;
+  wire is_..;
   wire [11:0] priv_L;
   wire [4:0] rt_addr;
 
@@ -116,38 +116,39 @@ module tinker_core (
   // brgt needs a third register read; use array directly
   wire [63:0] rt_val = reg_file.registers[rt_addr];
 
-  // brnz: jump if data2 (rs) is nonzero, target is data1 (rd)
+  // brnz
   wire brnz_taken = is_branch && !is_brgt && (data2 != 64'd0);
 
-  // brgt: jump if data2 (rs) > rt_val (rt), both signed
+  // brgt
   wire brgt_taken = is_branch && is_brgt && ($signed(data2) > $signed(rt_val));
 
   wire branch_taken_any = brnz_taken || brgt_taken || is_jump;
 
   // next pc mux - selects the correct target for each jump/branch type
   wire [63:0] next_pc_val;
-  assign next_pc_val = is_return ? mem_rdata :  // return reads the saved address from the stack
-      is_brr_imm ? (pc + immediate) :  // brr L: add signed offset to current pc
-      is_brr_reg ? (pc + data1) :  // brr rd: add register value to current pc
-      data1;  // br/brnz/brgt/call: jump directly to rd
+  // handle branch cases
+  assign next_pc_val = is_return ? mem_rdata :
+      is_brr_imm ? (pc + immediate) :
+      is_brr_reg ? (pc + data1) :
+      data1;
 
-  // r31 is the stack pointer - return and call both use mem[r31-8]
+  // return and call  use mem[r31-8]
   wire [63:0] r31_val = reg_file.registers[31];
   wire [63:0] stack_top = r31_val - 64'd8;
 
-  // memory data address: normally base + offset, but return needs to read the stack
+  // handle return
   wire [63:0] mem_data_addr = is_return ? stack_top : (data1 + immediate);
 
-  // for stores we write data2, for call we write the return address (pc+4)
+  // handle call
   wire [63:0] mem_write_val = is_call ? (pc + 64'd4) : data2;
   wire [63:0] mem_store_addr = is_call ? stack_top : (data1 + immediate);
 
   wire mem_we = (is_store || is_call) && !halted;
 
-  // write-back mux - picks what goes into the destination register
+  // write-back mux
   wire [63:0] wb_data;
   assign wb_data = is_load ? mem_rdata : is_mov_reg ? data1 :
-      // mov rd, L keeps the upper 52 bits of rd and replaces only the lower 12
+      // mov rd, L
       is_mov_imm ? ((data1 & ~64'hFFF) | immediate) : alu_result;
 
   // submodule instantiations
@@ -218,8 +219,8 @@ module tinker_core (
       .result(alu_result)
   );
 
-  // r31 is the stack pointer and must start at the top of memory
-  // the reg_file reset loop zeroes everything, so we overwrite r31 here on the same edge
+  // start at the top of memory
+  // overwrite r31 here on the same edge
   always @(posedge clk) begin
     if (reset) reg_file.registers[31] <= MEM_SIZE;
   end
