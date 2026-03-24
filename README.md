@@ -7,4 +7,4 @@ EID: psm2357
 
 To compile:./build.sh
 
-To run:./hw9
+To run:./hw8
