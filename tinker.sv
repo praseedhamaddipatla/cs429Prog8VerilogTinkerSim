@@ -2,7 +2,7 @@
 `define PC_START 64'h2000
 
 `include "hdl/alu.sv"
-`include "hdl/reg_file.sv"
+`include "hdl/regfile.sv"
 `include "hdl/decoder.sv"
 
 // fetch module - owns pc
@@ -24,7 +24,7 @@ module fetch (
       pc_reg <= `PC_START;
     end else if (!halt) begin
       if (branch_taken) begin
-        // bounds check: clamp to PC_START if target is out of valid memory
+        // bounds check if target is out of valid memory
         if (next_pc >= `MEM_SIZE) pc_reg <= `PC_START;
         else pc_reg <= next_pc;
       end else begin
