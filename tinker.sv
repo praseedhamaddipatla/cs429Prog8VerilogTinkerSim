@@ -1,6 +1,10 @@
 `define MEM_SIZE (512 * 1024)
 `define PC_START 64'h2000
 
+`include "hdl/alu.sv"
+`include "hdl/reg_file.sv"
+`include "hdl/decoder.sv"
+
 // fetch module - owns pc
 // pc updates on the rising edge after current instr finishes
 module fetch (
