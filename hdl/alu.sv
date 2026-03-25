@@ -14,38 +14,41 @@ module alu (
     reg [10:0] ex, ey, er;
     reg [52:0] mx, my;  // 53 bits with the implicit leading 1 restored
     reg [10:0] ediff;
-    reg [53:0] ax, ay;  // extra guard bit for alignment shifts
-    reg [54:0] sum;
+    reg [55:0] ax, ay;
+    reg [56:0] sum;
     reg [52:0] mr;
+    reg guard, round_bit, sticky;
     integer k;
     begin
       sx = x[63];
       ex = x[62:52];
-      mx = {1'b1, x[51:0]}; //add implicit 1 back to mantissa
+      mx = {1'b1, x[51:0]};
       sy = y[63];
       ey = y[62:52];
       my = {1'b1, y[51:0]};
-      sy = sy ^ do_sub;  // flip sign of y for sub
+      sy = sy ^ do_sub;  // flip sign of y to implement subtraction
 
       if (ex == 0) begin
         fp_add = {sy, ey, my[51:0]};
       end else if (ey == 0) begin
         fp_add = {sx, ex, mx[51:0]};
       end else begin
-        // align mantissas: shift num with smaller exponent right
+        // align mantissas: shift the smaller-exp one right, extra bits store stuff kicked out
         if (ex >= ey) begin
           ediff = ex - ey;
-          ax = {1'b0, mx};
-          ay = (ediff >= 54) ? 54'd0 : ({1'b0, my} >> ediff);
+          ax = {1'b0, mx, 2'b0};  // with padding
+          if (ediff >= 56) ay = 56'd0;
+          else ay = ({1'b0, my, 2'b0} >> ediff);
           er = ex;
         end else begin
           ediff = ey - ex;
-          ay = {1'b0, my};
-          ax = (ediff >= 54) ? 54'd0 : ({1'b0, mx} >> ediff);
+          ay = {1'b0, my, 2'b0};
+          if (ediff >= 56) ax = 56'd0;
+          else ax = ({1'b0, mx, 2'b0} >> ediff);
           er = ey;
         end
 
-        // add magnitudes if signs match, subtract if differ
+        // add magnitudes if signs match, sub if they differ
         if (sx == sy) begin
           sum = ax + ay;
           sr  = sx;
@@ -59,23 +62,40 @@ module alu (
           end
         end
 
-        // normalize: find the leading 1 and adjust exp
+        // normalize: find the leading 1 and adjust exponent accordingly
         if (sum == 0) begin
           fp_add = 64'd0;
         end else begin
-          mr = sum[52:0];
-          if (sum[54] || sum[53]) begin
-            // overflow into the carry bit: shift right and bump exp
-            mr = sum[54:2];
-            er = er + 1;
+          mr = sum[54:2];  // bits 54:2 are the 53 mantissa bits after alignment
+          if (sum[56] || sum[55]) begin
+            // carry out: shift right one place, capturing the bit that falls off
+            guard     = sum[2];
+            round_bit = sum[1];
+            sticky    = sum[0];
+            mr        = sum[56:4];
+            er        = er + 1;
           end else begin
-            // shift left until bit 52 is 1
-            k = 0;
-            while (k < 53 && mr[52] == 0) begin
-              mr = mr << 1;
-              er = er - 1;
-              k  = k + 1;
+            // work from the full sum word so we don't lose bits
+            begin : norm
+              reg [56:0] s;
+              s = sum;
+              while (s[54] == 0 && s != 0) begin
+                s  = s << 1;
+                er = er - 1;
+              end
+              mr        = s[54:2];
+              guard     = s[1];
+              round_bit = s[0];
+              sticky    = 0;
             end
+          end
+          // round to nearest even:
+          // round up if guard is set and any lower bit is nonzero, or if tied and result is odd
+          if (guard && (round_bit || sticky || mr[0])) mr = mr + 1;
+          // if rounding caused the mantissa to overflow into bit 53, renormalize
+          if (mr[52] == 0 && mr != 0) begin
+            mr = mr >> 1;
+            er = er + 1;
           end
           fp_add = {sr, er, mr[51:0]};
         end
@@ -89,8 +109,9 @@ module alu (
     reg sx, sy, sr;
     reg [10:0] ex, ey, er;
     reg [52:0] mx, my;
-    reg [105:0] prod;  // 53-bit * 53-bit so max 106 bits
+    reg [105:0] prod;  // 53-bit * 53-bit product needs up to 106 bits
     reg [ 52:0] mr;
+    reg guard, round_bit, sticky;
     begin
       sx = x[63];
       ex = x[62:52];
@@ -103,15 +124,27 @@ module alu (
       if (ex == 0 || ey == 0) begin
         fp_mul = 64'd0;
       end else begin
-        // add biased exp then sub one bias
+        // add biased exponents then sub one bias
         er   = ex + ey - 11'd1023;
         prod = mx * my;
-        // leading 1 lands at bit 105 or 104
         if (prod[105]) begin
-          mr = prod[104:52];
-          er = er + 1;
+          // bits 104:52 are the 53 mantissa bits; bits 51:0 are the lost fraction
+          mr        = prod[104:52];
+          guard     = prod[51];
+          round_bit = prod[50];
+          sticky    = |prod[49:0];  // or-reduce: 1 if any lost bit is nonzero
+          er        = er + 1;
         end else begin
-          mr = prod[103:51];
+          mr        = prod[104:52];
+          guard     = prod[50];
+          round_bit = prod[49];
+          sticky    = |prod[48:0];
+        end
+        // round to nearest even
+        if (guard && (round_bit || sticky || mr[0])) mr = mr + 1;
+        if (mr[52] == 0 && mr != 0) begin
+          mr = mr >> 1;
+          er = er + 1;
         end
         fp_mul = {sr, er, mr[51:0]};
       end
@@ -119,14 +152,16 @@ module alu (
   endfunction
 
   // fp divide
-  // shift the numerator left 53 bits before integer div
   function automatic [63:0] fp_div;
     input [63:0] x, y;
     reg sx, sy, sr;
     reg [10:0] ex, ey, er;
     reg [52:0] mx, my;
-    reg [105:0] num;
+    reg [107:0] num;  // mx shifted left
+    reg [ 54:0] qr;  // quotient: 53 mantissa bits + guard + round
+    reg [107:0] rem;  // remainder for sticky bit
     reg [ 52:0] mr;
+    reg guard, round_bit, sticky;
     begin
       sx = x[63];
       ex = x[62:52];
@@ -137,19 +172,34 @@ module alu (
       sr = sx ^ sy;
 
       if (ey == 0 || my == 0) begin
-        // div by zero: return inf
+        // divide by zero: return inf
         fp_div = {sr, 11'h7FF, 52'd0};
       end else if (ex == 0 || mx == 0) begin
         fp_div = 64'd0;
       end else begin
-        // subtract biased exp then add bias back
+        // sub biased exponents then add bias back
         er  = ex - ey + 11'd1023;
-        num = {mx, 53'd0};  // shift left for precision
-        mr  = num / my;
-        if (!mr[52]) begin
-          // leading 1 is one place too low, shift and adjust exp
-          mr = mr << 1;
-          er = er - 1;
+        // shift numerator left 55 bits so the quotient has 53 bits + guard + round
+        num = {mx, 55'd0};
+        qr  = num / my;
+        rem = num % my;  // remainder: nonzero means we lost something → sticky=1
+        // normalize: leading 1 should be at bit 54 of qr
+        if (qr[54]) begin
+          mr        = qr[54:2];
+          guard     = qr[1];
+          round_bit = qr[0];
+          er        = er + 1;
+        end else begin
+          mr        = qr[53:1];
+          guard     = qr[0];
+          round_bit = 0;
+        end
+        sticky = (rem != 0) ? 1 : 0;
+        // round to nearest even
+        if (guard && (round_bit || sticky || mr[0])) mr = mr + 1;
+        if (mr[52] == 0 && mr != 0) begin
+          mr = mr >> 1;
+          er = er + 1;
         end
         fp_div = {sr, er, mr[51:0]};
       end

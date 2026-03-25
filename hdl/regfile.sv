@@ -19,7 +19,7 @@ assign r2 = registers[raddr2];
 integer i;
 always @(posedge clk) begin
     if (reset) begin
-        for (i = 0; i < 32; i = i + 1)
+        for (i = 0; i < 31; i = i + 1)
             registers[i] <= 64'd0;
         // tinker_core overwrites registers[31] with MEM_SIZE on the same reset edge
     end else if (write) begin

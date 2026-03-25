@@ -97,7 +97,7 @@ module tinker_core (
   wire is_return, is_call;
   wire is_halt;
   wire is_mov_reg, is_mov_imm;
-  wire is_..;
+  wire is_priv;
   wire [11:0] priv_L;
   wire [4:0] rt_addr;
 
@@ -137,7 +137,7 @@ module tinker_core (
   wire [63:0] stack_top = r31_val - 64'd8;
 
   // handle return
-  wire [63:0] mem_data_addr = is_return ? stack_top : (data1 + immediate);
+  wire [63:0] mem_data_addr = (is_return || is_call) ? stack_top : (data1 + immediate);
 
   // handle call
   wire [63:0] mem_write_val = is_call ? (pc + 64'd4) : data2;
