@@ -16,10 +16,18 @@ module fetch (
   assign pc = pc_reg;
 
   always @(posedge clk) begin
-    if (reset) pc_reg <= `PC_START;
-    else if (!halt) begin
-      if (branch_taken) pc_reg <= next_pc;
-      else pc_reg <= pc_reg + 64'd4;
+    if (reset) begin
+      pc_reg <= `PC_START;
+    end else if (!halt) begin
+      if (branch_taken) begin
+        // bounds check: clamp to PC_START if target is out of valid memory
+        if (next_pc >= `MEM_SIZE) pc_reg <= `PC_START;
+        else pc_reg <= next_pc;
+      end else begin
+        // bounds check on sequential increment too
+        if (pc_reg + 64'd4 >= `MEM_SIZE) pc_reg <= `PC_START;
+        else pc_reg <= pc_reg + 64'd4;
+      end
     end
   end
 
@@ -47,7 +55,6 @@ module mem_module #(
     bytes[fetch_addr+3], bytes[fetch_addr+2], bytes[fetch_addr+1], bytes[fetch_addr]
   };
 
-  // same layout for 64-bit data reads
   assign read_data = {
     bytes[data_addr+7],
     bytes[data_addr+6],
@@ -97,8 +104,6 @@ module tinker_core (
   wire is_return, is_call;
   wire is_halt;
   wire is_mov_reg, is_mov_imm;
-  wire is_priv;
-  wire [11:0] priv_L;
   wire [4:0] rt_addr;
 
   wire [63:0] data1, data2;
@@ -113,43 +118,35 @@ module tinker_core (
     else if (is_halt) halted <= 1;
   end
 
-  // brgt needs a third register read; use array directly
-  wire [63:0] rt_val = reg_file.registers[rt_addr];
+  // alu_result[0] carries the branch condition for brnz and brgt
+  wire branch_taken_any = (is_branch && alu_result[0]) || is_jump;
 
-  // brnz
-  wire brnz_taken = is_branch && !is_brgt && (data2 != 64'd0);
+  // for brnz: raddr2=rd (target) so data2 holds the target address
+  // for brgt: rt_addr holds rd (target), read directly from reg array
+  wire [63:0] brgt_target = reg_file.registers[rt_addr];
+  wire [63:0] branch_target = is_brgt ? brgt_target : data2;
 
-  // brgt
-  wire brgt_taken = is_branch && is_brgt && ($signed(data2) > $signed(rt_val));
-
-  wire branch_taken_any = brnz_taken || brgt_taken || is_jump;
-
-  // next pc mux - selects the correct target for each jump/branch type
-  wire [63:0] next_pc_val;
-  // handle branch cases
-  assign next_pc_val = is_return ? mem_rdata :
-      is_brr_imm ? (pc + immediate) :
-      is_brr_reg ? (pc + data1) :
-      data1;
-
-  // return and call  use mem[r31-8]
   wire [63:0] r31_val = reg_file.registers[31];
   wire [63:0] stack_top = r31_val - 64'd8;
 
-  // handle return
+  // next pc mux
+  wire [63:0] next_pc_val =
+      is_return  ? mem_rdata        :
+      is_brr_imm ? (pc + immediate) :
+      is_brr_reg ? (pc + data1)     :
+      is_branch  ? branch_target    :
+                   data1;           // br / call: target in rd = data1
+
   wire [63:0] mem_data_addr = (is_return || is_call) ? stack_top : (data1 + immediate);
-
-  // handle call
   wire [63:0] mem_write_val = is_call ? (pc + 64'd4) : data2;
-  wire [63:0] mem_store_addr = is_call ? stack_top : (data1 + immediate);
-
   wire mem_we = (is_store || is_call) && !halted;
 
   // write-back mux
-  wire [63:0] wb_data;
-  assign wb_data = is_load ? mem_rdata : is_mov_reg ? data1 :
-      // mov rd, L
-      is_mov_imm ? ((data1 & ~64'hFFF) | immediate) : alu_result;
+  wire [63:0] wb_data =
+      is_load    ? mem_rdata :
+      is_mov_reg ? data1     :
+      is_mov_imm ? ((data1 & ~64'hFFF) | immediate) :
+                   alu_result;
 
   // submodule instantiations
 
@@ -195,8 +192,6 @@ module tinker_core (
       .is_halt(is_halt),
       .is_mov_reg(is_mov_reg),
       .is_mov_imm(is_mov_imm),
-      .is_priv(is_priv),
-      .priv_L(priv_L),
       .rt_addr(rt_addr)
   );
 
@@ -219,8 +214,7 @@ module tinker_core (
       .result(alu_result)
   );
 
-  // start at the top of memory
-  // overwrite r31 here on the same edge
+  // initialize stack pointer to top of memory on reset
   always @(posedge clk) begin
     if (reset) reg_file.registers[31] <= MEM_SIZE;
   end
