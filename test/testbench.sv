@@ -1,257 +1,316 @@
 module testbench;
 
-reg clk;
-reg reset;
+  reg clk;
+  reg reset;
 
-tinker_core cpu(.clk(clk), .reset(reset));
+  tinker_core cpu (
+      .clk  (clk),
+      .reset(reset)
+  );
 
-always #5 clk = ~clk;
+  always #5 clk = ~clk;
 
-integer pass_count;
-integer fail_count;
+  integer pass_count;
+  integer fail_count;
 
-// instruction encoding helpers
-// format: opcode[31:27] rd[26:22] rs[21:17] rt[16:12] imm[11:0]
+  // instruction encoding helpers
+  // format: opcode[31:27] rd[26:22] rs[21:17] rt[16:12] imm[11:0]
 
-function [31:0] make_add;
+  function [31:0] make_add;
     input [4:0] rd, rs, rt;
-    begin make_add = (5'h18 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_add = (5'h18 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_addi;
+  function [31:0] make_addi;
     input [4:0] rd;
     input [11:0] imm;
-    begin make_addi = (5'h19 << 27) | (rd << 22) | imm; end
-endfunction
+    begin
+      make_addi = (5'h19 << 27) | (rd << 22) | imm;
+    end
+  endfunction
 
-function [31:0] make_sub;
+  function [31:0] make_sub;
     input [4:0] rd, rs, rt;
-    begin make_sub = (5'h1A << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_sub = (5'h1A << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_subi;
+  function [31:0] make_subi;
     input [4:0] rd;
     input [11:0] imm;
-    begin make_subi = (5'h1B << 27) | (rd << 22) | imm; end
-endfunction
+    begin
+      make_subi = (5'h1B << 27) | (rd << 22) | imm;
+    end
+  endfunction
 
-function [31:0] make_mul;
+  function [31:0] make_mul;
     input [4:0] rd, rs, rt;
-    begin make_mul = (5'h1C << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_mul = (5'h1C << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_div;
+  function [31:0] make_div;
     input [4:0] rd, rs, rt;
-    begin make_div = (5'h1D << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_div = (5'h1D << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_and;
+  function [31:0] make_and;
     input [4:0] rd, rs, rt;
-    begin make_and = (5'h00 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_and = (5'h00 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_or;
+  function [31:0] make_or;
     input [4:0] rd, rs, rt;
-    begin make_or = (5'h01 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_or = (5'h01 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_xor;
+  function [31:0] make_xor;
     input [4:0] rd, rs, rt;
-    begin make_xor = (5'h02 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_xor = (5'h02 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_not;
+  function [31:0] make_not;
     input [4:0] rd, rs;
-    begin make_not = (5'h03 << 27) | (rd << 22) | (rs << 17); end
-endfunction
+    begin
+      make_not = (5'h03 << 27) | (rd << 22) | (rs << 17);
+    end
+  endfunction
 
-function [31:0] make_shftr;
+  function [31:0] make_shftr;
     input [4:0] rd, rs, rt;
-    begin make_shftr = (5'h04 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_shftr = (5'h04 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_shftri;
+  function [31:0] make_shftri;
     input [4:0] rd;
     input [11:0] imm;
-    begin make_shftri = (5'h05 << 27) | (rd << 22) | imm; end
-endfunction
+    begin
+      make_shftri = (5'h05 << 27) | (rd << 22) | imm;
+    end
+  endfunction
 
-function [31:0] make_shftl;
+  function [31:0] make_shftl;
     input [4:0] rd, rs, rt;
-    begin make_shftl = (5'h06 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_shftl = (5'h06 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_shftli;
+  function [31:0] make_shftli;
     input [4:0] rd;
     input [11:0] imm;
-    begin make_shftli = (5'h07 << 27) | (rd << 22) | imm; end
-endfunction
+    begin
+      make_shftli = (5'h07 << 27) | (rd << 22) | imm;
+    end
+  endfunction
 
-function [31:0] make_br;
+  function [31:0] make_br;
     input [4:0] rd;
-    begin make_br = (5'h08 << 27) | (rd << 22); end
-endfunction
+    begin
+      make_br = (5'h08 << 27) | (rd << 22);
+    end
+  endfunction
 
-function [31:0] make_brr_imm;
+  function [31:0] make_brr_imm;
     input [11:0] imm;
-    begin make_brr_imm = (5'h0A << 27) | imm; end
-endfunction
+    begin
+      make_brr_imm = (5'h0A << 27) | imm;
+    end
+  endfunction
 
-function [31:0] make_brnz;
+  function [31:0] make_brnz;
     input [4:0] rd, rs;
-    begin make_brnz = (5'h0B << 27) | (rd << 22) | (rs << 17); end
-endfunction
+    begin
+      make_brnz = (5'h0B << 27) | (rd << 22) | (rs << 17);
+    end
+  endfunction
 
-function [31:0] make_call;
+  function [31:0] make_call;
     input [4:0] rd;
-    begin make_call = (5'h0C << 27) | (rd << 22); end
-endfunction
+    begin
+      make_call = (5'h0C << 27) | (rd << 22);
+    end
+  endfunction
 
-function [31:0] make_return;
-    begin make_return = (5'h0D << 27); end
-endfunction
+  function [31:0] make_return;
+    begin
+      make_return = (5'h0D << 27);
+    end
+  endfunction
 
-function [31:0] make_brgt;
+  function [31:0] make_brgt;
     input [4:0] rd, rs, rt;
-    begin make_brgt = (5'h0E << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_brgt = (5'h0E << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_halt;
-    begin make_halt = (5'h0F << 27); end
-endfunction
+  function [31:0] make_halt;
+    begin
+      make_halt = (5'h0F << 27);
+    end
+  endfunction
 
-function [31:0] make_load;
+  function [31:0] make_load;
     input [4:0] rd, rs;
     input [11:0] imm;
-    begin make_load = (5'h10 << 27) | (rd << 22) | (rs << 17) | imm; end
-endfunction
+    begin
+      make_load = (5'h10 << 27) | (rd << 22) | (rs << 17) | imm;
+    end
+  endfunction
 
-function [31:0] make_mov_reg;
+  function [31:0] make_mov_reg;
     input [4:0] rd, rs;
-    begin make_mov_reg = (5'h11 << 27) | (rd << 22) | (rs << 17); end
-endfunction
+    begin
+      make_mov_reg = (5'h11 << 27) | (rd << 22) | (rs << 17);
+    end
+  endfunction
 
-function [31:0] make_mov_imm;
+  function [31:0] make_mov_imm;
     input [4:0] rd;
     input [11:0] imm;
-    begin make_mov_imm = (5'h12 << 27) | (rd << 22) | imm; end
-endfunction
+    begin
+      make_mov_imm = (5'h12 << 27) | (rd << 22) | imm;
+    end
+  endfunction
 
-function [31:0] make_store;
+  function [31:0] make_store;
     input [4:0] rd, rs;
     input [11:0] imm;
-    begin make_store = (5'h13 << 27) | (rd << 22) | (rs << 17) | imm; end
-endfunction
+    begin
+      make_store = (5'h13 << 27) | (rd << 22) | (rs << 17) | imm;
+    end
+  endfunction
 
-function [31:0] make_addf;
+  function [31:0] make_addf;
     input [4:0] rd, rs, rt;
-    begin make_addf = (5'h14 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_addf = (5'h14 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_subf;
+  function [31:0] make_subf;
     input [4:0] rd, rs, rt;
-    begin make_subf = (5'h15 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_subf = (5'h15 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_mulf;
+  function [31:0] make_mulf;
     input [4:0] rd, rs, rt;
-    begin make_mulf = (5'h16 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_mulf = (5'h16 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-function [31:0] make_divf;
+  function [31:0] make_divf;
     input [4:0] rd, rs, rt;
-    begin make_divf = (5'h17 << 27) | (rd << 22) | (rs << 17) | (rt << 12); end
-endfunction
+    begin
+      make_divf = (5'h17 << 27) | (rd << 22) | (rs << 17) | (rt << 12);
+    end
+  endfunction
 
-// write a 32-bit instruction little-endian into memory
-task write_instr;
+  // write a 32-bit instruction little-endian into memory
+  task write_instr;
     input [63:0] addr;
     input [31:0] word;
     begin
-        cpu.memory.bytes[addr]   = word[7:0];
-        cpu.memory.bytes[addr+1] = word[15:8];
-        cpu.memory.bytes[addr+2] = word[23:16];
-        cpu.memory.bytes[addr+3] = word[31:24];
+      cpu.memory.bytes[addr]   = word[7:0];
+      cpu.memory.bytes[addr+1] = word[15:8];
+      cpu.memory.bytes[addr+2] = word[23:16];
+      cpu.memory.bytes[addr+3] = word[31:24];
     end
-endtask
+  endtask
 
-// write a 64-bit value little-endian into memory
-task write_mem64;
+  // write a 64-bit value little-endian into memory
+  task write_mem64;
     input [63:0] addr;
     input [63:0] val;
     begin
-        cpu.memory.bytes[addr]   = val[7:0];
-        cpu.memory.bytes[addr+1] = val[15:8];
-        cpu.memory.bytes[addr+2] = val[23:16];
-        cpu.memory.bytes[addr+3] = val[31:24];
-        cpu.memory.bytes[addr+4] = val[39:32];
-        cpu.memory.bytes[addr+5] = val[47:40];
-        cpu.memory.bytes[addr+6] = val[55:48];
-        cpu.memory.bytes[addr+7] = val[63:56];
+      cpu.memory.bytes[addr]   = val[7:0];
+      cpu.memory.bytes[addr+1] = val[15:8];
+      cpu.memory.bytes[addr+2] = val[23:16];
+      cpu.memory.bytes[addr+3] = val[31:24];
+      cpu.memory.bytes[addr+4] = val[39:32];
+      cpu.memory.bytes[addr+5] = val[47:40];
+      cpu.memory.bytes[addr+6] = val[55:48];
+      cpu.memory.bytes[addr+7] = val[63:56];
     end
-endtask
+  endtask
 
-// check a register and print pass/fail
-task check_reg;
+  // check a register and print pass/fail
+  task check_reg;
     input [63:0] expected;
     input [63:0] got;
     input integer test_id;
     begin
-        if (got === expected) begin
-            $display("  pass [%0d]: got 0x%016h", test_id, got);
-            pass_count = pass_count + 1;
-        end else begin
-            $display("  FAIL [%0d]: got 0x%016h  expected 0x%016h",
-                     test_id, got, expected);
-            fail_count = fail_count + 1;
-        end
+      if (got === expected) begin
+        $display("  pass [%0d]: got 0x%016h", test_id, got);
+        pass_count = pass_count + 1;
+      end else begin
+        $display("  FAIL [%0d]: got 0x%016h  expected 0x%016h", test_id, got, expected);
+        fail_count = fail_count + 1;
+      end
     end
-endtask
+  endtask
 
-// pulse reset and clear the program area so tests don't bleed into each other
-task do_reset;
+  // pulse reset and clear the program area so tests don't bleed into each other
+  task do_reset;
     integer j;
     begin
-        reset = 1;
-        for (j = 0; j < 512; j = j + 1)
-            cpu.memory.bytes[64'h2000 + j] = 8'h00;
-        @(posedge clk);
-        @(posedge clk);
-        reset = 0;
+      reset = 1;
+      for (j = 0; j < 512; j = j + 1) cpu.memory.bytes[64'h2000+j] = 8'h00;
+      @(posedge clk);
+      @(posedge clk);
+      reset = 0;
     end
-endtask
+  endtask
 
-task run_cycles;
+  task run_cycles;
     input integer n;
     integer j;
     begin
-        for (j = 0; j < n; j = j + 1)
-            @(posedge clk);
+      for (j = 0; j < n; j = j + 1) @(posedge clk);
     end
-endtask
+  endtask
 
-// load a full 64-bit address into a register using two addi:
-// first addi sets the lower 12 bits, second adds the upper part
-// only works cleanly when addr fits in ~24 bits (fine for our test addresses)
-// we use r29/r30 as scratch when building branch targets
-task load_addr;
-    input [4:0]  rd;
+  // load a full 64-bit address into a register using two addi:
+  // first addi sets the lower 12 bits, second adds the upper part
+  // only works cleanly when addr fits in ~24 bits (fine for our test addresses)
+  // we use r29/r30 as scratch when building branch targets
+  task load_addr;
+    input [4:0] rd;
     input [63:0] addr;
-    input [63:0] at;   // where to write these two instructions
+    input [63:0] at;  // where to write these two instructions
     begin
-        // write:  addi rd, lower12(addr)   then   addi rd, upper bits
-        // addr like 0x2018: lower = 0x018, upper = 0x2000
-        // but 0x2000 > 12 bits so we split differently:
-        // addi rd, (addr & 0xFFF)  then addi rd, (addr >> 12) << 12
-        // since addi sign-extends, we just do two addis with 12-bit chunks
-        write_instr(at,    make_addi(rd, addr[11:0]));
-        write_instr(at+4,  make_addi(rd, addr[23:12]));  // adds upper 12 bits (shifted by 12 already via repeated addi)
+      // write:  addi rd, lower12(addr)   then   addi rd, upper bits
+      // addr like 0x2018: lower = 0x018, upper = 0x2000
+      // but 0x2000 > 12 bits so we split differently:
+      // addi rd, (addr & 0xFFF)  then addi rd, (addr >> 12) << 12
+      // since addi sign-extends, we just do two addis with 12-bit chunks
+      write_instr(at, make_addi(rd, addr[11:0]));
+      write_instr(at + 4, make_addi(rd, addr[23:12]
+                  ));  // adds upper 12 bits (shifted by 12 already via repeated addi)
     end
-endtask
+  endtask
 
-integer i;
+  integer i;
 
-initial begin
+  initial begin
     $dumpfile("sim/wave.vcd");
     $dumpvars(0, testbench);
 
@@ -270,18 +329,16 @@ initial begin
 
     // r0-r30 should be zero
     begin
-        integer all_zero;
-        all_zero = 1;
-        for (i = 0; i < 31; i = i + 1)
-            if (cpu.reg_file.registers[i] !== 64'd0)
-                all_zero = 0;
-        if (all_zero) begin
-            $display("  pass [0]: r0-r30 all zero");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("  FAIL [0]: some register not zero after reset");
-            fail_count = fail_count + 1;
-        end
+      integer all_zero;
+      all_zero = 1;
+      for (i = 0; i < 31; i = i + 1) if (cpu.reg_file.registers[i] !== 64'd0) all_zero = 0;
+      if (all_zero) begin
+        $display("  pass [0]: r0-r30 all zero");
+        pass_count = pass_count + 1;
+      end else begin
+        $display("  FAIL [0]: some register not zero after reset");
+        fail_count = fail_count + 1;
+      end
     end
 
     // r31 should be 512*1024 = 524288
@@ -415,7 +472,7 @@ initial begin
     // or with all-ones: anything | ~0 = ~0
     do_reset();
     write_instr(64'h2000, make_addi(5'd1, 12'd0));
-    write_instr(64'h2004, make_not(5'd2, 5'd1));           // r2 = ~0
+    write_instr(64'h2004, make_not(5'd2, 5'd1));  // r2 = ~0
     write_instr(64'h2008, make_addi(5'd3, 12'hABC));
     write_instr(64'h200C, make_or(5'd4, 5'd3, 5'd2));
     write_instr(64'h2010, make_halt());
@@ -500,10 +557,10 @@ initial begin
 
     // store then load at offset 0
     do_reset();
-    write_instr(64'h2000, make_addi(5'd1, 12'h100));        // r1 = base addr 0x100
+    write_instr(64'h2000, make_addi(5'd1, 12'h100));  // r1 = base addr 0x100
     write_instr(64'h2004, make_addi(5'd2, 12'd55));
-    write_instr(64'h2008, make_store(5'd1, 5'd2, 12'd0));   // mem[0x100] = 55
-    write_instr(64'h200C, make_load(5'd3, 5'd1, 12'd0));    // r3 = mem[0x100]
+    write_instr(64'h2008, make_store(5'd1, 5'd2, 12'd0));  // mem[0x100] = 55
+    write_instr(64'h200C, make_load(5'd3, 5'd1, 12'd0));  // r3 = mem[0x100]
     write_instr(64'h2010, make_halt());
     run_cycles(10);
     check_reg(64'd55, cpu.reg_file.registers[3], 24);
@@ -512,8 +569,8 @@ initial begin
     do_reset();
     write_instr(64'h2000, make_addi(5'd1, 12'h100));
     write_instr(64'h2004, make_addi(5'd2, 12'd42));
-    write_instr(64'h2008, make_store(5'd1, 5'd2, 12'd8));   // mem[0x108] = 42
-    write_instr(64'h200C, make_load(5'd3, 5'd1, 12'd8));    // r3 = mem[0x108]
+    write_instr(64'h2008, make_store(5'd1, 5'd2, 12'd8));  // mem[0x108] = 42
+    write_instr(64'h200C, make_load(5'd3, 5'd1, 12'd8));  // r3 = mem[0x108]
     write_instr(64'h2010, make_halt());
     run_cycles(10);
     check_reg(64'd42, cpu.reg_file.registers[3], 25);
@@ -523,8 +580,9 @@ initial begin
     write_instr(64'h2000, make_addi(5'd1, 12'h100));
     write_instr(64'h2004, make_addi(5'd2, 12'd11));
     write_instr(64'h2008, make_store(5'd1, 5'd2, 12'd0));
-    write_instr(64'h200C, make_addi(5'd2, 12'd88));         // r2 = 11+88 = 99... actually addi adds to rd so r2 = 11+88=99
-    write_instr(64'h2010, make_store(5'd1, 5'd2, 12'd0));   // overwrite with 99
+    write_instr(64'h200C, make_addi(5'd2, 12'd88
+                ));  // r2 = 11+88 = 99... actually addi adds to rd so r2 = 11+88=99
+    write_instr(64'h2010, make_store(5'd1, 5'd2, 12'd0));  // overwrite with 99
     write_instr(64'h2014, make_load(5'd3, 5'd1, 12'd0));
     write_instr(64'h2018, make_halt());
     run_cycles(14);
@@ -543,50 +601,51 @@ initial begin
     // use addi twice: r4 = 0 + 16 = 0x10, then since we need 0x2010 use a different approach:
     // preload 0x2000 into r5 via shifting: addi r5,1 then shftli r5,13 gives 0x2000, add r4+r5
     do_reset();
-    write_instr(64'h2000, make_addi(5'd1, 12'd0));          // r1 = 0 (sentinel)
-    write_instr(64'h2004, make_addi(5'd4, 12'h10));         // r4 = 0x10
-    write_instr(64'h2008, make_addi(5'd5, 12'd1));          // r5 = 1
-    write_instr(64'h200C, make_shftli(5'd5, 12'd13));       // r5 = 1<<13 = 0x2000
-    write_instr(64'h2010, make_add(5'd4, 5'd4, 5'd5));      // r4 = 0x10 + 0x2000 = 0x2010
-    write_instr(64'h2014, make_br(5'd4));                   // jump to 0x2014+4=skip next... wait, r4=0x2010+0x2004? no r4=0x2010
+    write_instr(64'h2000, make_addi(5'd1, 12'd0));  // r1 = 0 (sentinel)
+    write_instr(64'h2004, make_addi(5'd4, 12'h10));  // r4 = 0x10
+    write_instr(64'h2008, make_addi(5'd5, 12'd1));  // r5 = 1
+    write_instr(64'h200C, make_shftli(5'd5, 12'd13));  // r5 = 1<<13 = 0x2000
+    write_instr(64'h2010, make_add(5'd4, 5'd4, 5'd5));  // r4 = 0x10 + 0x2000 = 0x2010
+    write_instr(64'h2014, make_br(5'd4
+                ));  // jump to 0x2014+4=skip next... wait, r4=0x2010+0x2004? no r4=0x2010
     // actually: br jumps to 0x2010, but we're executing from 0x2014, so r4 must be the target
     // r4 = 0x2018 to skip the addi at 0x2018, let's recalculate:
     // instructions at: 2000,2004,2008,200C,2010,2014 = br, 2018 = addi(bad), 201C = halt
     // so we need r4 = 0x201C
     // redo: r4 = 0x1C + 0x2000 = 0x201C
     // overwrite:
-    write_instr(64'h2004, make_addi(5'd4, 12'h1C));         // r4 = 0x1C
-    write_instr(64'h2010, make_add(5'd4, 5'd4, 5'd5));      // r4 = 0x1C + 0x2000 = 0x201C
-    write_instr(64'h2014, make_br(5'd4));                   // jump to 0x201C
-    write_instr(64'h2018, make_addi(5'd1, 12'd99));         // should be skipped
+    write_instr(64'h2004, make_addi(5'd4, 12'h1C));  // r4 = 0x1C
+    write_instr(64'h2010, make_add(5'd4, 5'd4, 5'd5));  // r4 = 0x1C + 0x2000 = 0x201C
+    write_instr(64'h2014, make_br(5'd4));  // jump to 0x201C
+    write_instr(64'h2018, make_addi(5'd1, 12'd99));  // should be skipped
     write_instr(64'h201C, make_halt());
     run_cycles(16);
     check_reg(64'd0, cpu.reg_file.registers[1], 27);
 
     // brnz taken: rs=1 nonzero so jump, skip the bad addi
     do_reset();
-    write_instr(64'h2000, make_addi(5'd1, 12'd1));          // r1 = 1 (test value, nonzero)
-    write_instr(64'h2004, make_addi(5'd2, 12'd0));          // r2 = 0 (sentinel)
+    write_instr(64'h2000, make_addi(5'd1, 12'd1));  // r1 = 1 (test value, nonzero)
+    write_instr(64'h2004, make_addi(5'd2, 12'd0));  // r2 = 0 (sentinel)
     write_instr(64'h2008, make_addi(5'd5, 12'd1));
-    write_instr(64'h200C, make_shftli(5'd5, 12'd13));       // r5 = 0x2000
-    write_instr(64'h2010, make_addi(5'd4, 12'h20));         // r4 = 0x1C
-    write_instr(64'h2014, make_add(5'd4, 5'd4, 5'd5));      // r4 = 0x201C
-    write_instr(64'h2018, make_brnz(5'd4, 5'd1));           // if r1!=0: jump to r4
-    write_instr(64'h201C, make_addi(5'd2, 12'd99));         // should be skipped
+    write_instr(64'h200C, make_shftli(5'd5, 12'd13));  // r5 = 0x2000
+    write_instr(64'h2010, make_addi(5'd4, 12'h20));  // r4 = 0x1C
+    write_instr(64'h2014, make_add(5'd4, 5'd4, 5'd5));  // r4 = 0x201C
+    write_instr(64'h2018, make_brnz(5'd4, 5'd1));  // if r1!=0: jump to r4
+    write_instr(64'h201C, make_addi(5'd2, 12'd99));  // should be skipped
     write_instr(64'h2020, make_halt());
     run_cycles(18);
     check_reg(64'd0, cpu.reg_file.registers[2], 28);
 
     // brnz not taken: rs=0 so no jump, the addi executes
     do_reset();
-    write_instr(64'h2000, make_addi(5'd1, 12'd0));          // r1 = 0 (branch not taken)
+    write_instr(64'h2000, make_addi(5'd1, 12'd0));  // r1 = 0 (branch not taken)
     write_instr(64'h2004, make_addi(5'd2, 12'd0));
     write_instr(64'h2008, make_addi(5'd5, 12'd1));
     write_instr(64'h200C, make_shftli(5'd5, 12'd13));
     write_instr(64'h2010, make_addi(5'd4, 12'h1C));
-    write_instr(64'h2014, make_add(5'd4, 5'd4, 5'd5));      // r4 = 0x201C (far target)
-    write_instr(64'h2018, make_brnz(5'd4, 5'd1));           // r1==0, not taken
-    write_instr(64'h201C, make_addi(5'd2, 12'd55));         // should execute
+    write_instr(64'h2014, make_add(5'd4, 5'd4, 5'd5));  // r4 = 0x201C (far target)
+    write_instr(64'h2018, make_brnz(5'd4, 5'd1));  // r1==0, not taken
+    write_instr(64'h201C, make_addi(5'd2, 12'd55));  // should execute
     write_instr(64'h2020, make_halt());
     run_cycles(18);
     check_reg(64'd55, cpu.reg_file.registers[2], 29);
@@ -595,18 +654,19 @@ initial begin
     do_reset();
     write_instr(64'h2000, make_addi(5'd1, 12'd10));
     write_instr(64'h2004, make_addi(5'd2, 12'd3));
-    write_instr(64'h2008, make_addi(5'd6, 12'd0));          // r6 = sentinel
+    write_instr(64'h2008, make_addi(5'd6, 12'd0));  // r6 = sentinel
     write_instr(64'h200C, make_addi(5'd5, 12'd1));
     write_instr(64'h2010, make_shftli(5'd5, 12'd13));
     write_instr(64'h2014, make_addi(5'd4, 12'h24));
-    write_instr(64'h2018, make_add(5'd4, 5'd4, 5'd5));      // r4 = 0x2024
-    write_instr(64'h201C, make_brgt(5'd4, 5'd1, 5'd2));     // r1>r2, jump to 0x2024
-    write_instr(64'h2020, make_addi(5'd6, 12'd99));         // should be skipped
+    write_instr(64'h2018, make_add(5'd4, 5'd4, 5'd5));  // r4 = 0x2024
+    write_instr(64'h201C, make_brgt(5'd4, 5'd1, 5'd2));  // r1>r2, jump to 0x2024
+    write_instr(64'h2020, make_addi(5'd6, 12'd99));  // should be skipped
     write_instr(64'h2024, make_halt());
     run_cycles(18);
     check_reg(64'd0, cpu.reg_file.registers[6], 30);
 
     // brgt not taken: r1=3 not > r2=10
+    
     do_reset();
     write_instr(64'h2000, make_addi(5'd1, 12'd3));
     write_instr(64'h2004, make_addi(5'd2, 12'd10));
@@ -615,8 +675,8 @@ initial begin
     write_instr(64'h2010, make_shftli(5'd5, 12'd13));
     write_instr(64'h2014, make_addi(5'd4, 12'h24));
     write_instr(64'h2018, make_add(5'd4, 5'd4, 5'd5));
-    write_instr(64'h201C, make_brgt(5'd4, 5'd1, 5'd2));     // not taken
-    write_instr(64'h2020, make_addi(5'd6, 12'd77));         // should execute
+    write_instr(64'h201C, make_brgt(5'd4, 5'd1, 5'd2));  // not taken
+    write_instr(64'h2020, make_addi(5'd6, 12'd77));  // should execute
     write_instr(64'h2024, make_halt());
     run_cycles(18);
     check_reg(64'd77, cpu.reg_file.registers[6], 31);
@@ -624,8 +684,8 @@ initial begin
     // brr_imm forward: skip one instruction
     do_reset();
     write_instr(64'h2000, make_addi(5'd1, 12'd0));
-    write_instr(64'h2004, make_brr_imm(12'd8));             // pc = 0x2004 + 8 = 0x200C
-    write_instr(64'h2008, make_addi(5'd1, 12'd99));         // skipped
+    write_instr(64'h2004, make_brr_imm(12'd8));  // pc = 0x2004 + 8 = 0x200C
+    write_instr(64'h2008, make_addi(5'd1, 12'd99));  // skipped
     write_instr(64'h200C, make_halt());
     run_cycles(8);
     check_reg(64'd0, cpu.reg_file.registers[1], 32);
@@ -633,11 +693,11 @@ initial begin
     // call and return: subroutine sets r1=42 then returns
     do_reset();
     write_instr(64'h2000, make_addi(5'd5, 12'd1));
-    write_instr(64'h2004, make_shftli(5'd5, 12'd13));       // r5 = 0x2000
+    write_instr(64'h2004, make_shftli(5'd5, 12'd13));  // r5 = 0x2000
     write_instr(64'h2008, make_addi(5'd4, 12'h18));
-    write_instr(64'h200C, make_add(5'd4, 5'd4, 5'd5));      // r4 = 0x2018 (subroutine addr)
-    write_instr(64'h2010, make_call(5'd4));                  // call, saves 0x2014 to stack
-    write_instr(64'h2014, make_halt());                      // return lands here
+    write_instr(64'h200C, make_add(5'd4, 5'd4, 5'd5));  // r4 = 0x2018 (subroutine addr)
+    write_instr(64'h2010, make_call(5'd4));  // call, saves 0x2014 to stack
+    write_instr(64'h2014, make_halt());  // return lands here
     // subroutine at 0x2018:
     write_instr(64'h2018, make_addi(5'd1, 12'd42));
     write_instr(64'h201C, make_return());
@@ -663,9 +723,9 @@ initial begin
     write_mem64(64'h1000, 64'h3FF0000000000000);
     write_mem64(64'h1008, 64'h4000000000000000);
     write_instr(64'h2000, make_addi(5'd1, 12'h1));
-    write_instr(64'h2004, make_shftli(5'd1, 12'd12));       // r1 = 0x1000
-    write_instr(64'h2008, make_load(5'd2, 5'd1, 12'd0));    // r2 = 1.0
-    write_instr(64'h200C, make_load(5'd3, 5'd1, 12'd8));    // r3 = 2.0
+    write_instr(64'h2004, make_shftli(5'd1, 12'd12));  // r1 = 0x1000
+    write_instr(64'h2008, make_load(5'd2, 5'd1, 12'd0));  // r2 = 1.0
+    write_instr(64'h200C, make_load(5'd3, 5'd1, 12'd8));  // r3 = 2.0
     write_instr(64'h2010, make_addf(5'd4, 5'd2, 5'd3));
     write_instr(64'h2014, make_halt());
     run_cycles(14);
@@ -754,6 +814,6 @@ initial begin
     // ----------------------------------------------------------------
     $display("\n--- results: %0d passed, %0d failed ---", pass_count, fail_count);
     $finish;
-end
+  end
 
 endmodule

@@ -42,11 +42,14 @@ module fetch (
   wire taken = (is_branch && branch_cond) || is_jump;
 
   // next PC mux
-  wire [63:0] next_pc = is_return ? mem_rdata :
-  is_brr_imm ? (pc_reg + immediate) :
-  is_brr_reg ? (pc_reg + data1) :
-  is_branch ? (is_brgt ? data1 : data2) :
-  data1;
+  wire [63:0] next_pc =
+    is_return              ? mem_rdata :
+    is_brr_imm             ? (pc_reg + immediate) :
+    is_brr_reg             ? (pc_reg + data1) :
+    (is_branch && is_brgt) ? data1 :   // BRGT
+    is_branch              ? data2 :   // BRNZ
+    is_jump                ? data1 :
+    pc_reg + 64'd4;  
 
   always @(posedge clk) begin
     if (reset) begin
