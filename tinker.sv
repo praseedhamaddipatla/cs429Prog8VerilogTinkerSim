@@ -5,41 +5,64 @@
 `include "hdl/regfile.sv"
 `include "hdl/decoder.sv"
 
-// fetch module - owns pc
-// pc updates on the rising edge after current instr finishes
+// instr fetch & pc control
 module fetch (
     input clk,
     input reset,
     input halt,
-    input branch_taken,
-    input [63:0] next_pc,
+
+    // decoded instr type
+    input is_jump,
+    input is_branch,
+    input is_brgt,
+    input is_brr_reg,
+    input is_brr_imm,
+    input is_return,
+    input is_call,
+
+    // branch condition from ALU (1 = taken)
+    input branch_cond,
+
+    // register values for target computation from regfile
+    input [63:0] data1,  // raddr1 valu
+    input [63:0] data2,  // raddr2 value
+
+    // immediate from decoder
+    input [63:0] immediate,
+
+    // return address popped from stack
+    input [63:0] mem_rdata,
+
     output [63:0] pc
 );
-
   reg [63:0] pc_reg;
   assign pc = pc_reg;
+
+  // branch is taken if ALU says so (brnz/brgt) or if unconditional
+  wire taken = (is_branch && branch_cond) || is_jump;
+
+  // next PC mux
+  wire [63:0] next_pc = is_return ? mem_rdata :
+  is_brr_imm ? (pc_reg + immediate) :
+  is_brr_reg ? (pc_reg + data1) :
+  is_branch ? (is_brgt ? data1 : data2) :
+  data1;
 
   always @(posedge clk) begin
     if (reset) begin
       pc_reg <= `PC_START;
     end else if (!halt) begin
-      if (branch_taken) begin
-        // bounds check if target is out of valid memory
+      if (taken) begin
         if (next_pc >= `MEM_SIZE) pc_reg <= `PC_START;
         else pc_reg <= next_pc;
       end else begin
-        // bounds check on sequential increment too
         if (pc_reg + 64'd4 >= `MEM_SIZE) pc_reg <= `PC_START;
         else pc_reg <= pc_reg + 64'd4;
       end
     end
   end
-
 endmodule
 
-
-// memory module
-// has two ports: one for instr fetch and one for data load/store
 module mem_module #(
     parameter MEM_SIZE = 512 * 1024
 ) (
@@ -52,13 +75,13 @@ module mem_module #(
     output [63:0] read_data
 );
 
+  //actual mem
   reg [7:0] bytes[0:MEM_SIZE-1];
 
-  // little-endian
+  //instr fetch port
   assign instr_out = {
     bytes[fetch_addr+3], bytes[fetch_addr+2], bytes[fetch_addr+1], bytes[fetch_addr]
   };
-
   assign read_data = {
     bytes[data_addr+7],
     bytes[data_addr+6],
@@ -70,6 +93,7 @@ module mem_module #(
     bytes[data_addr]
   };
 
+  //load/store port
   always @(posedge clk) begin
     if (we) begin
       bytes[data_addr]   <= write_data[7:0];
@@ -82,22 +106,22 @@ module mem_module #(
       bytes[data_addr+7] <= write_data[63:56];
     end
   end
-
 endmodule
 
 
-// top-level core - wires fetch, memory, decoder, register file, and alu together
 module tinker_core (
     input clk,
     input reset
 );
-
   localparam MEM_SIZE = 512 * 1024;
 
-  // interconnect wires
+  // wires to connect modules
+
+  // IF → decoder
   wire [63:0] pc;
   wire [31:0] instr;
 
+  // decoder outputs
   wire [4:0] raddr1, raddr2, waddr;
   wire [63:0] immediate;
   wire [ 4:0] op;
@@ -110,59 +134,75 @@ module tinker_core (
   wire is_mov_reg, is_mov_imm;
   wire [4:0] rt_addr;
 
+  // regfile → ALU/IF/mem
   wire [63:0] data1, data2;
+
+  // ALU → refile/IF
   wire [63:0] alu_result;
+
+  // mem → regfile/IF
   wire [63:0] mem_rdata;
 
-  // halt latch - once set we stop fetching and writing
-  reg halted;
+  // regfile writeback data
+  wire [63:0] wb_data;
 
+  // mem ctrl
+  wire [63:0] mem_data_addr;
+  wire [63:0] mem_write_val;
+  wire        mem_we;
+
+  // halt latch
+  reg         halted;
   always @(posedge clk) begin
     if (reset) halted <= 0;
     else if (is_halt) halted <= 1;
   end
 
-  // alu_result[0] carries the branch condition for brnz and brgt
-  wire branch_taken_any = (is_branch && alu_result[0]) || is_jump;
-
-  // for brnz: raddr2=rd (target) so data2 holds the target address
-  // for brgt: rt_addr holds rd (target), read directly from reg array
-  wire [63:0] brgt_target = reg_file.registers[rt_addr];
-  wire [63:0] branch_target = is_brgt ? brgt_target : data2;
-
+  // brgt / stack
+  wire [63:0] rt_val = reg_file.registers[rt_addr];
+  // call/return use r31 as stack pointer
   wire [63:0] r31_val = reg_file.registers[31];
   wire [63:0] stack_top = r31_val - 64'd8;
 
-  // next pc mux
-  wire [63:0] next_pc_val =
-      is_return  ? mem_rdata        :
-      is_brr_imm ? (pc + immediate) :
-      is_brr_reg ? (pc + data1)     :
-      is_branch  ? branch_target    :
-                   data1;           // br / call: target in rd = data1
+  // ALU input mux
+  wire [63:0] alu_a = is_brgt ? data2 : data1;
+  wire [63:0] alu_b = is_brgt ? rt_val : (use_imm ? immediate : data2);
 
-  wire [63:0] mem_data_addr = (is_return || is_call) ? stack_top : (data1 + immediate);
-  wire [63:0] mem_write_val = is_call ? (pc + 64'd4) : data2;
-  wire mem_we = (is_store || is_call) && !halted;
+  // mem ctrl
+  assign mem_data_addr = (is_return || is_call) ? stack_top : (data1 + immediate);
+  assign mem_write_val = is_call ? (pc + 64'd4) : data2;
+  assign mem_we = (is_store || is_call) && !halted;
 
-  // write-back mux
-  wire [63:0] wb_data =
+  // writeback mux
+  assign wb_data =
       is_load    ? mem_rdata :
       is_mov_reg ? data1     :
       is_mov_imm ? ((data1 & ~64'hFFF) | immediate) :
                    alu_result;
 
-  // submodule instantiations
+  // module instantiation
 
+  // pc logic
   fetch fetch_inst (
-      .clk(clk),
-      .reset(reset),
-      .halt(halted),
-      .branch_taken(branch_taken_any && !halted),
-      .next_pc(next_pc_val),
-      .pc(pc)
+      .clk        (clk),
+      .reset      (reset),
+      .halt       (halted),
+      .is_jump    (is_jump && !halted),
+      .is_branch  (is_branch && !halted),
+      .is_brgt    (is_brgt),
+      .is_brr_reg (is_brr_reg),
+      .is_brr_imm (is_brr_imm),
+      .is_return  (is_return),
+      .is_call    (is_call),
+      .branch_cond(alu_result[0]),         // from ALU
+      .data1      (data1),                 // from regfile
+      .data2      (data2),                 // from reg file
+      .immediate  (immediate),
+      .mem_rdata  (mem_rdata),             // from mem
+      .pc         (pc)
   );
 
+  // memory: IF port + data port
   mem_module #(
       .MEM_SIZE(MEM_SIZE)
   ) memory (
@@ -175,6 +215,7 @@ module tinker_core (
       .read_data(mem_rdata)
   );
 
+  // IF → decoder
   decoder dec_inst (
       .instr(instr),
       .raddr1(raddr1),
@@ -199,6 +240,7 @@ module tinker_core (
       .rt_addr(rt_addr)
   );
 
+  // decoder → regfile → ALU/IF
   reg_file reg_file (
       .clk(clk),
       .reset(reset),
@@ -211,14 +253,15 @@ module tinker_core (
       .r2(data2)
   );
 
+  // regfile → ALU → IF/regfile/mem
   alu alu_inst (
-      .a(data1),
-      .b(use_imm ? immediate : data2),
+      .a(alu_a),
+      .b(alu_b),
       .op(op),
       .result(alu_result)
   );
 
-  // initialize stack pointer to top of memory on reset
+  // r31 initialized to top of memory on reset
   always @(posedge clk) begin
     if (reset) reg_file.registers[31] <= MEM_SIZE;
   end

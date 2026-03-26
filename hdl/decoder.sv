@@ -160,13 +160,13 @@ module decoder (
         is_jump   = 1;
         is_return = 1;
       end
-      5'h0E: begin  // brgt rd, rs, rt  — ALU checks rs > rt signed
-        raddr1 = rs;  // a = rs (value to test)
-        raddr2 = rt;  // b = rt (value to compare against)
-        rt_addr = rd;  // rd holds the branch target address
-        op = CMPGT;
+      5'h0E: begin  // brgt rd, rs, rt
+        raddr1    = rd;
+        raddr2    = rs;
+        rt_addr   = rt;
+        op        = CMPGT;
         is_branch = 1;
-        is_brgt = 1;
+        is_brgt   = 1;
       end
 
       5'h0F: begin  // halt (priv L=0)
