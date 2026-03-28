@@ -5,6 +5,7 @@ module decoder (
     output reg [4:0] waddr,
     output reg [63:0] immediate,
     output reg [4:0] op,
+    //bunch of selectors
     output reg use_imm,
     output reg write,
     output reg is_load,
