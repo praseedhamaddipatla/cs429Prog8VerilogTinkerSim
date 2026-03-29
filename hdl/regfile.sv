@@ -4,6 +4,7 @@ module reg_file(
     input [63:0] data,
     input [4:0] raddr1,
     input [4:0] raddr2,
+    input [4:0] raddr3,
     input [4:0] waddr,
     input write,
     output [63:0] r1,
@@ -15,6 +16,8 @@ reg [63:0] registers [0:31];
 // reads are combinational so the alu sees register values in the same cycle
 assign r1 = registers[raddr1];
 assign r2 = registers[raddr2];
+assign r3 = registers[raddr3];
+
 
 integer i;
 always @(posedge clk) begin

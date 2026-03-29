@@ -229,7 +229,7 @@ module alu (
       5'd13: result = fp_div(a, b);
 
       5'd14: result = (a != 64'd0) ? 64'd1 : 64'd0;          // CMPNZ for brnz
-      5'd15: result = ($signed(a) < $signed(b)) ? 64'd1 : 64'd0; // CMPGT for brgt FIX LATERRRRRRRRRRRR
+      5'd15: result = ($signed(a) > $signed(b)) ? 64'd1 : 64'd0; // CMPGT for brgt FIX LATERRRRRRRRRRRR
 
       default: result = 64'd0;
     endcase
