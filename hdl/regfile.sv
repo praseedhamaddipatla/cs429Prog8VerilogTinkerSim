@@ -8,7 +8,8 @@ module reg_file(
     input [4:0] waddr,
     input write,
     output [63:0] r1,
-    output [63:0] r2
+    output [63:0] r2,
+    output [63:0] r3
 );
 
 reg [63:0] registers [0:31];
