@@ -185,29 +185,28 @@ module alu (
   endfunction
 
 
-  function automatic [63:0] fp_div;
+ function automatic [63:0] fp_div;
     input [63:0] x, y;
     reg        sx, sy, sr;
-    reg [10:0] ex, ey, er;
+    reg signed [12:0] ex, ey, er;
     reg [52:0] mx, my;
-    reg [107:0] num;
-    reg [107:0] qr;
-    reg [107:0] rem;
+    reg [105:0] num;
+    reg [105:0] qr;
+    reg [105:0] rem;
     reg [ 53:0] mr;
     reg         guard, round_bit, sticky;
     reg         x_nan, y_nan, x_inf, y_inf, x_zero, y_zero;
-    integer     shift;
     begin
-      sx = x[63]; ex = x[62:52]; mx = (ex == 0) ? {1'b0, x[51:0]} : {1'b1, x[51:0]};
-      sy = y[63]; ey = y[62:52]; my = (ey == 0) ? {1'b0, y[51:0]} : {1'b1, y[51:0]};
+      sx = x[63]; ex = {2'b0, x[62:52]}; mx = (x[62:52] == 0) ? {1'b0, x[51:0]} : {1'b1, x[51:0]};
+      sy = y[63]; ey = {2'b0, y[62:52]}; my = (y[62:52] == 0) ? {1'b0, y[51:0]} : {1'b1, y[51:0]};
       sr = sx ^ sy;
 
-      x_nan  = (ex == 11'h7FF) && (x[51:0] != 0);
-      y_nan  = (ey == 11'h7FF) && (y[51:0] != 0);
-      x_inf  = (ex == 11'h7FF) && (x[51:0] == 0);
-      y_inf  = (ey == 11'h7FF) && (y[51:0] == 0);
-      x_zero = (ex == 0)       && (x[51:0] == 0);
-      y_zero = (ey == 0)       && (y[51:0] == 0);
+      x_nan  = (x[62:52] == 11'h7FF) && (x[51:0] != 0);
+      y_nan  = (y[62:52] == 11'h7FF) && (y[51:0] != 0);
+      x_inf  = (x[62:52] == 11'h7FF) && (x[51:0] == 0);
+      y_inf  = (y[62:52] == 11'h7FF) && (y[51:0] == 0);
+      x_zero = (x[62:52] == 0)       && (x[51:0] == 0);
+      y_zero = (y[62:52] == 0)       && (y[51:0] == 0);
 
       if (x_nan) begin
         fp_div = x;
@@ -227,76 +226,48 @@ module alu (
         fp_div = {sr, 63'd0};
 
       end else begin
-        // Shift numerator left by 55 bits for precision
-        // For normals:   ex - ey + 1023, then adjust after normalization
-        // Use signed arithmetic for exponent to handle subnormals
-        er  = ex - ey + 11'd1023;
+        // True exponent: normals use stored exp, subnormals use 1
+        if (x[62:52] == 0) ex = 13'd1; else ex = {2'b0, x[62:52]};
+        if (y[62:52] == 0) ey = 13'd1; else ey = {2'b0, y[62:52]};
 
-        // Perform division with extra precision bits
-        num = ({mx, 55'd0});
-        qr  = num / {55'd0, my};
-        rem = num % {55'd0, my};
+        // Biased result exponent (before normalization adjustment)
+        // mx/my is in [0.5, 2.0), so er may need +1 or -1 after normalize
+        er = ex - ey + 13'd1023;
 
-        // Normalize: find leading 1 in qr
-        // qr has at most 53+1 significant bits (mx/my is in [0.5, 2.0))
-        // We want exactly 53 mantissa bits + implicit 1
-        shift = 0;
-        begin : find_leading
-          reg [107:0] tmp;
-          tmp = qr;
-          // Find position of leading 1
-          if (tmp == 0) begin
-            fp_div = {sr, 63'd0};
-            shift = -1; // signal zero result
-          end else begin
-            // Shift until bit 53 is the leading 1
-            // qr[54] set means quotient >= 2 (need to shift right)
-            if (qr[54]) begin
-              // leading 1 at bit 54: shift right by 1
-              mr        = {1'b0, qr[54:2]};
-              guard     = qr[1];
-              round_bit = qr[0];
-              sticky    = (rem != 0);
-              er        = er + 1;
-            end else if (qr[53]) begin
-              // leading 1 at bit 53: already normalized
-              mr        = {1'b0, qr[53:1]};
-              guard     = qr[0];
-              round_bit = 1'b0;
-              sticky    = (rem != 0);
-              // er unchanged
-            end else begin
-              // leading 1 below bit 53: shift left until bit 53 is set
-              begin : norm_left
-                reg [107:0] q2;
-                reg [10:0]  shifts;
-                q2     = qr;
-                shifts = 0;
-                while (q2[53] == 0 && q2 != 0) begin
-                  q2     = q2 << 1;
-                  shifts = shifts + 1;
-                end
-                mr        = {1'b0, q2[53:1]};
-                guard     = q2[0];
-                round_bit = 1'b0;
-                sticky    = (rem != 0);
-                er        = er - shifts;
-              end
-            end
+        // Shift mx left by 53 bits so integer division gives 53+ bits of quotient
+        num = {mx, 53'd0};
+        qr  = num / {53'd0, my};
+        rem = num % {53'd0, my};
 
-            if (shift != -1) begin
-              if (guard && (round_bit || sticky || mr[0]))
-                mr = mr + 54'd1;
-
-              if (mr[53]) begin
-                mr = mr >> 1;
-                er = er + 1;
-              end
-
-              fp_div = {sr, er[10:0], mr[51:0]};
-            end
-          end
+        // qr is now in range [0.5*2^53, 2.0*2^53)
+        // i.e. leading 1 is at bit 52 or 53
+        if (qr[53]) begin
+          // quotient >= 2^53: leading 1 at bit 53
+          // result mantissa = qr[53:1], guard = qr[0]
+          mr        = {1'b0, qr[53:1]};
+          guard     = qr[0];
+          round_bit = 1'b0;
+          sticky    = (rem != 0);
+          er        = er + 1;
+        end else begin
+          // leading 1 at bit 52
+          // result mantissa = qr[52:0] padded, guard from below
+          mr        = {1'b0, qr[52:0]};  // mr[52:0] = mantissa, mr[53]=0
+          guard     = 1'b0;
+          round_bit = 1'b0;
+          sticky    = (rem != 0);
+          // er unchanged
         end
+
+        if (guard && (round_bit || sticky || mr[0]))
+          mr = mr + 54'd1;
+
+        if (mr[53]) begin
+          mr = mr >> 1;
+          er = er + 1;
+        end
+
+        fp_div = {sr, er[10:0], mr[51:0]};
       end
     end
   endfunction
