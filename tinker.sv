@@ -16,7 +16,7 @@ module tinker_core (
 
   // wires to connect modules
 
-  // IF → decoder
+  // IF => decoder
   wire [63:0] pc;
   wire [31:0] instr;
 
@@ -33,14 +33,14 @@ module tinker_core (
   wire        is_mov_reg, is_mov_imm;
   wire [4:0]  rt_addr;
 
-  // regfile → ALU/IF/mem
+  // regfile => ALU/IF/mem
   // data1 = raddr1, data2 = raddr2, data3 = raddr3 (rt for brgt)
   wire [63:0] data1, data2, data3;
 
-  // ALU → regfile/IF
+  // ALU => regfile/IF
   wire [63:0] alu_result;
 
-  // mem → regfile/IF
+  // mem => regfile/IF
   wire [63:0] mem_rdata;
 
   // regfile writeback data
@@ -95,11 +95,11 @@ module tinker_core (
       .is_brr_imm (is_brr_imm),
       .is_return  (is_return),
       .is_call    (is_call),
-      .branch_cond(alu_result[0]),  // ALU → IF
-      .data1      (data1),          // regfile → IF
-      .data2      (data2),          // regfile → IF
+      .branch_cond(alu_result[0]),  // ALU => IF
+      .data1      (data1),          // regfile => IF
+      .data2      (data2),          // regfile => IF
       .immediate  (immediate),
-      .mem_rdata  (mem_rdata),      // memory → IF (return address)
+      .mem_rdata  (mem_rdata),      // memory => IF (return address)
       .pc         (pc)
   );
 
@@ -116,7 +116,7 @@ module tinker_core (
       .read_data (mem_rdata)
   );
 
-  // IF → decoder
+  // IF => decoder
   decoder dec_inst (
       .instr     (instr),
       .raddr1    (raddr1),
@@ -141,14 +141,14 @@ module tinker_core (
       .rt_addr   (rt_addr)
   );
 
-  // decoder → regfile → ALU/IF
+  // decoder => regfile => ALU/IF
   // third read port (raddr3) carries rt for brgt comparison
   reg_file reg_file (
       .clk   (clk),
       .reset (reset),
       .raddr1(raddr1),
       .raddr2(raddr2),
-      .raddr3(rt_addr),  // rt for brgt, 0 otherwise (harmless)
+      .raddr3(rt_addr),  // rt for brgt, 0 otherwise
       .waddr (waddr),
       .data  (wb_data),
       .write (write && !halted),
@@ -157,7 +157,7 @@ module tinker_core (
       .r3    (data3)
   );
 
-  // regfile → ALU → IF/regfile/mem
+  // regfile => ALU => IF/regfile/mem
   alu alu_inst (
       .a     (alu_a),
       .b     (alu_b),

@@ -36,19 +36,19 @@ module fetch (
 
   // next PC mux - all PC logic lives here
   wire [63:0] next_pc =
-      is_return              ? mem_rdata            :  // return: target from stack via memory
-      is_brr_imm             ? (pc_reg + immediate) :  // brr L:  pc-relative immediate
-      is_brr_reg             ? (pc_reg + data1)     :  // brr rd: pc-relative register
-      (is_branch && is_brgt) ? data1                :  // brgt: target=data1(rd)
-      is_branch              ? data2                :  // brnz: target=data2(rd)
-                               data1;                  // br/call: target in data1(rd)
+      is_return              ? mem_rdata            :  // return
+      is_brr_imm             ? (pc_reg + immediate) :  // brr L
+      is_brr_reg             ? (pc_reg + data1)     :  // brr rd
+      (is_branch && is_brgt) ? data1                :  // brgt
+      is_branch              ? data2                :  // brnz
+                               data1;                  // br/call
 
   always @(posedge clk) begin
     if (reset) begin
       pc_reg <= `PC_START;
     end else if (!halt) begin
       if (taken) begin
-        // bounds check: clamp to PC_START if target is out of valid memory
+        // bounds check: go to PC_START if oob
         if (next_pc >= `MEM_SIZE) pc_reg <= `PC_START;
         else pc_reg <= next_pc;
       end else begin

@@ -25,7 +25,7 @@ always @(posedge clk) begin
     if (reset) begin
         for (i = 0; i < 31; i = i + 1)
             registers[i] <= 64'd0;
-        // tinker_core overwrites reg[31] with MEM_SIZE on reset edge
+        // overwrites reg[31] with MEM_SIZE on reset edge
     end else if (write) begin
         registers[waddr] <= data;
     end
