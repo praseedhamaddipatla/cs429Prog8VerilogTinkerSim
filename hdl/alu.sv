@@ -197,9 +197,13 @@ module alu (
     reg         guard, round_bit, sticky;
     reg         x_nan, y_nan, x_inf, y_inf, x_zero, y_zero;
     begin
-      sx = x[63]; ex = {2'b0, x[62:52]}; mx = (x[62:52] == 0) ? {1'b0, x[51:0]} : {1'b1, x[51:0]};
-      sy = y[63]; ey = {2'b0, y[62:52]}; my = (y[62:52] == 0) ? {1'b0, y[51:0]} : {1'b1, y[51:0]};
+      sx = x[63]; ex = {2'b0, x[62:52]};
+      sy = y[63]; ey = {2'b0, y[62:52]};
       sr = sx ^ sy;
+
+      // mantissa: subnormals have no implicit leading 1
+      mx = (x[62:52] == 0) ? {1'b0, x[51:0]} : {1'b1, x[51:0]};
+      my = (y[62:52] == 0) ? {1'b0, y[51:0]} : {1'b1, y[51:0]};
 
       x_nan  = (x[62:52] == 11'h7FF) && (x[51:0] != 0);
       y_nan  = (y[62:52] == 11'h7FF) && (y[51:0] != 0);
@@ -226,37 +230,40 @@ module alu (
         fp_div = {sr, 63'd0};
 
       end else begin
-        // True exponent: normals use stored exp, subnormals use 1
+        // Adjust exponent for subnormals (true exponent = 1 when stored exp = 0)
         if (x[62:52] == 0) ex = 13'd1; else ex = {2'b0, x[62:52]};
         if (y[62:52] == 0) ey = 13'd1; else ey = {2'b0, y[62:52]};
 
-        // Biased result exponent (before normalization adjustment)
-        // mx/my is in [0.5, 2.0), so er may need +1 or -1 after normalize
-        er = ex - ey + 13'd1023;
+        er  = ex - ey + 13'd1022;
 
-        // Shift mx left by 53 bits so integer division gives 53+ bits of quotient
         num = {mx, 53'd0};
         qr  = num / {53'd0, my};
         rem = num % {53'd0, my};
 
-        // qr is now in range [0.5*2^53, 2.0*2^53)
-        // i.e. leading 1 is at bit 52 or 53
         if (qr[53]) begin
-          // quotient >= 2^53: leading 1 at bit 53
-          // result mantissa = qr[53:1], guard = qr[0]
+          // leading 1 at bit 53: quotient >= 2^53
+          // mantissa bits are qr[52:1], guard = qr[0]
+          mr        = {1'b0, qr[52:0]};   // mr[52:0] = mantissa+guard packed
+          // actually we want mr[53:1] = result mantissa (53 bits incl hidden)
+          // let's be explicit:
+          mr        = {1'b0, qr[53:1]};   // hidden 1 in mr[52], frac in mr[51:0] ... 
+          // Wait - mr is 54 bits. mr[52] = hidden 1, mr[51:0] = fraction.
+          // qr[53]=1 is the hidden bit. qr[52:1] = fraction. qr[0] = guard.
           mr        = {1'b0, qr[53:1]};
           guard     = qr[0];
           round_bit = 1'b0;
           sticky    = (rem != 0);
-          er        = er + 1;
+          er        = er + 1;  // now er = ex - ey + 1023
         end else begin
-          // leading 1 at bit 52
-          // result mantissa = qr[52:0] padded, guard from below
-          mr        = {1'b0, qr[52:0]};  // mr[52:0] = mantissa, mr[53]=0
+          // leading 1 at bit 52: quotient in [2^52, 2^53)
+          // qr[52]=1 is hidden bit, qr[51:0]=fraction, no guard bits from qr
+          mr        = {1'b0, qr[52:0]};
           guard     = 1'b0;
           round_bit = 1'b0;
           sticky    = (rem != 0);
-          // er unchanged
+          // er stays = ex - ey + 1022 ... 
+          // but wait: er = ex - ey + 1022, and the true exponent should be
+          // ex - ey + 1023 - 1 = ex - ey + 1022. Correct, no change needed.
         end
 
         if (guard && (round_bit || sticky || mr[0]))
@@ -265,6 +272,13 @@ module alu (
         if (mr[53]) begin
           mr = mr >> 1;
           er = er + 1;
+        end
+
+        // Handle underflow to subnormal: if er <= 0, shift mantissa right
+        if (er <= 0) begin
+          // shift mr right by (1 - er) to make it subnormal
+          mr = mr >> (1 - er);
+          er = 0;
         end
 
         fp_div = {sr, er[10:0], mr[51:0]};
