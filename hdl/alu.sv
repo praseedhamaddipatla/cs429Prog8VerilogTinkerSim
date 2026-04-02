@@ -26,17 +26,18 @@ module alu (
       sy = y[63];
       ey = y[62:52];
       my = {1'b1, y[51:0]};
-      sy = sy ^ do_sub;  // flip sign of y to implement subtraction
+      sy = sy ^ do_sub;  // flip sign of y for sub
 
+      // zero checks return  *other* op wo changing
       if (ex == 0) begin
-        fp_add = {sy, ey, my[51:0]};
+        fp_add = {sy, ey, my[51:0]};  // x is zero/denormal → return y (with possibly flipped sign)
       end else if (ey == 0) begin
-        fp_add = {sx, ex, mx[51:0]};
+        fp_add = {sx, ex, mx[51:0]};  // y is zero/denormal → return x
       end else begin
-        // align mantissas: shift the smaller-exp one right, extra bits store stuff kicked out
+        // align mantissas: shift the smaller-exp one right
         if (ex >= ey) begin
           ediff = ex - ey;
-          ax = {1'b0, mx, 2'b0};  // with padding
+          ax = {1'b0, mx, 2'b0};
           if (ediff >= 56) ay = 56'd0;
           else ay = ({1'b0, my, 2'b0} >> ediff);
           er = ex;
@@ -62,20 +63,19 @@ module alu (
           end
         end
 
-        // normalize: find the leading 1 and adjust exponent accordingly
+        // normalize
         if (sum == 0) begin
           fp_add = 64'd0;
         end else begin
-          mr = sum[54:2];  // bits 54:2 are the 53 mantissa bits after alignment
           if (sum[56] || sum[55]) begin
-            // carry out: shift right one place, capturing the bit that falls off
+            // carry out: result overflowed into bit 56 or 55, shift right one
             guard     = sum[2];
             round_bit = sum[1];
             sticky    = sum[0];
             mr        = sum[56:4];
             er        = er + 1;
           end else begin
-            // work from the full sum word so we don't lose bits
+            //shift left until bit 54 of the 57-bit sum is 1 (i.e. sum[54] == 1).
             begin : norm
               reg [56:0] s;
               s = sum;
@@ -83,17 +83,17 @@ module alu (
                 s  = s << 1;
                 er = er - 1;
               end
-              mr        = s[54:2];
+              mr        = s[54:2];   // 53 mantissa bits
               guard     = s[1];
               round_bit = s[0];
               sticky    = 0;
             end
           end
-          // round to nearest even:
-          // round up if guard is set and any lower bit is nonzero, or if tied and result is odd
+          // round to nearest even
           if (guard && (round_bit || sticky || mr[0])) mr = mr + 1;
-          // if rounding caused the mantissa to overflow into bit 53, renormalize
-          if (mr[52] == 0 && mr != 0) begin
+          // rounding can carry into bit 52, making mr[52] == 1.
+          // The original check was inverted (tested for mr[52]==0).
+          if (mr[52]) begin
             mr = mr >> 1;
             er = er + 1;
           end
@@ -119,20 +119,18 @@ module alu (
       sy = y[63];
       ey = y[62:52];
       my = {1'b1, y[51:0]};
-      sr = sx ^ sy;  // result sign is xor of input signs
+      sr = sx ^ sy;
 
       if (ex == 0 || ey == 0) begin
         fp_mul = 64'd0;
       end else begin
-        // add biased exponents then sub one bias
         er   = ex + ey - 11'd1023;
         prod = mx * my;
         if (prod[105]) begin
-          // bits 104:52 are the 53 mantissa bits; bits 51:0 are the lost fraction
           mr        = prod[104:52];
           guard     = prod[51];
           round_bit = prod[50];
-          sticky    = |prod[49:0];  // or-reduce: 1 if any lost bit is nonzero
+          sticky    = |prod[49:0];
           er        = er + 1;
         end else begin
           mr        = prod[104:52];
@@ -142,7 +140,7 @@ module alu (
         end
         // round to nearest even
         if (guard && (round_bit || sticky || mr[0])) mr = mr + 1;
-        if (mr[52] == 0 && mr != 0) begin
+        if (mr[52]) begin
           mr = mr >> 1;
           er = er + 1;
         end
@@ -157,9 +155,9 @@ module alu (
     reg sx, sy, sr;
     reg [10:0] ex, ey, er;
     reg [52:0] mx, my;
-    reg [107:0] num;  // mx shifted left
+    reg [107:0] num;  // mx shifted left 55 bits
     reg [ 54:0] qr;  // quotient: 53 mantissa bits + guard + round
-    reg [107:0] rem;  // remainder for sticky bit
+    reg [107:0] rem;
     reg [ 52:0] mr;
     reg guard, round_bit, sticky;
     begin
@@ -172,32 +170,32 @@ module alu (
       sr = sx ^ sy;
 
       if (ey == 0 || my == 0) begin
-        // divide by zero: return inf
+        // divide by zero → inf
         fp_div = {sr, 11'h7FF, 52'd0};
       end else if (ex == 0 || mx == 0) begin
         fp_div = 64'd0;
       end else begin
-        // sub biased exponents then add bias back
         er  = ex - ey + 11'd1023;
-        // shift numerator left 55 bits so the quotient has 53 bits + guard + round
         num = {mx, 55'd0};
         qr  = num / my;
-        rem = num % my;  // remainder: nonzero means we lost something → sticky=1
-        // normalize: leading 1 should be at bit 54 of qr
+        rem = num % my;
+        // normalize: leading 1 should be at bit 54 of the 55-bit qr
         if (qr[54]) begin
+          // result mantissa is qr[54:2], guard=qr[1], round=qr[0]
           mr        = qr[54:2];
           guard     = qr[1];
           round_bit = qr[0];
           er        = er + 1;
         end else begin
+          // result mantissa is qr[53:1], guard=qr[0], round=0
           mr        = qr[53:1];
           guard     = qr[0];
-          round_bit = 0;
+          round_bit = 1'b0;
         end
-        sticky = (rem != 0) ? 1 : 0;
+        sticky = (rem != 0) ? 1'b1 : 1'b0;
         // round to nearest even
         if (guard && (round_bit || sticky || mr[0])) mr = mr + 1;
-        if (mr[52] == 0 && mr != 0) begin
+        if (mr[52]) begin
           mr = mr >> 1;
           er = er + 1;
         end
@@ -224,12 +222,12 @@ module alu (
 
       // floating point
       5'd10: result = fp_add(a, b, 1'b0);  // addf
-      5'd11: result = fp_add(a, b, 1'b1);  // subf - do_sub flips sign of b
+      5'd11: result = fp_add(a, b, 1'b1);  // subf
       5'd12: result = fp_mul(a, b);
       5'd13: result = fp_div(a, b);
 
       5'd14: result = (a != 64'd0) ? 64'd1 : 64'd0;          // CMPNZ for brnz
-      5'd15: result = ($signed(a) > $signed(b)) ? 64'd1 : 64'd0; // CMPGT for brgt FIX LATERRRRRRRRRRRR
+      5'd15: result = ($signed(a) > $signed(b)) ? 64'd1 : 64'd0; // CMPGT for brgt
 
       default: result = 64'd0;
     endcase
