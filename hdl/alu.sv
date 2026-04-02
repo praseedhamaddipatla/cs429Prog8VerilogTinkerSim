@@ -191,14 +191,15 @@ module alu (
     reg [10:0] ex, ey, er;
     reg [52:0] mx, my;
     reg [107:0] num;
-    reg [ 54:0] qr;
+    reg [107:0] qr;
     reg [107:0] rem;
     reg [ 53:0] mr;
     reg         guard, round_bit, sticky;
     reg         x_nan, y_nan, x_inf, y_inf, x_zero, y_zero;
+    integer     shift;
     begin
-      sx = x[63]; ex = x[62:52]; mx = {1'b1, x[51:0]};
-      sy = y[63]; ey = y[62:52]; my = {1'b1, y[51:0]};
+      sx = x[63]; ex = x[62:52]; mx = (ex == 0) ? {1'b0, x[51:0]} : {1'b1, x[51:0]};
+      sy = y[63]; ey = y[62:52]; my = (ey == 0) ? {1'b0, y[51:0]} : {1'b1, y[51:0]};
       sr = sx ^ sy;
 
       x_nan  = (ex == 11'h7FF) && (x[51:0] != 0);
@@ -212,59 +213,90 @@ module alu (
         fp_div = x;
       end else if (y_nan) begin
         fp_div = y;
-
-      // Inf / Inf => NaN
       end else if (x_inf && y_inf) begin
         fp_div = 64'h7FF8000000000000;
-
-      // 0 / 0 => NaN
       end else if (x_zero && y_zero) begin
         fp_div = 64'h7FF8000000000000;
-
-      // Inf / finite => Inf
       end else if (x_inf) begin
         fp_div = {sr, 11'h7FF, 52'd0};
-
-      // finite / Inf => 0
       end else if (y_inf) begin
         fp_div = {sr, 63'd0};
-
-      // finite / 0 => Inf
       end else if (y_zero) begin
         fp_div = {sr, 11'h7FF, 52'd0};
-
-      // 0 / finite => 0
       end else if (x_zero) begin
         fp_div = {sr, 63'd0};
 
       end else begin
+        // Shift numerator left by 55 bits for precision
+        // For normals:   ex - ey + 1023, then adjust after normalization
+        // Use signed arithmetic for exponent to handle subnormals
         er  = ex - ey + 11'd1023;
-        num = {mx, 55'd0};
-        qr  = num / my;
-        rem = num % my;
 
-        if (qr[54]) begin
-          mr        = {1'b0, qr[54:2]};
-          guard     = qr[1];
-          round_bit = qr[0];
-        end else begin
-          mr        = {1'b0, qr[53:1]};
-          guard     = qr[0];
-          round_bit = 1'b0;
-          er        = er - 1;
+        // Perform division with extra precision bits
+        num = ({mx, 55'd0});
+        qr  = num / {55'd0, my};
+        rem = num % {55'd0, my};
+
+        // Normalize: find leading 1 in qr
+        // qr has at most 53+1 significant bits (mx/my is in [0.5, 2.0))
+        // We want exactly 53 mantissa bits + implicit 1
+        shift = 0;
+        begin : find_leading
+          reg [107:0] tmp;
+          tmp = qr;
+          // Find position of leading 1
+          if (tmp == 0) begin
+            fp_div = {sr, 63'd0};
+            shift = -1; // signal zero result
+          end else begin
+            // Shift until bit 53 is the leading 1
+            // qr[54] set means quotient >= 2 (need to shift right)
+            if (qr[54]) begin
+              // leading 1 at bit 54: shift right by 1
+              mr        = {1'b0, qr[54:2]};
+              guard     = qr[1];
+              round_bit = qr[0];
+              sticky    = (rem != 0);
+              er        = er + 1;
+            end else if (qr[53]) begin
+              // leading 1 at bit 53: already normalized
+              mr        = {1'b0, qr[53:1]};
+              guard     = qr[0];
+              round_bit = 1'b0;
+              sticky    = (rem != 0);
+              // er unchanged
+            end else begin
+              // leading 1 below bit 53: shift left until bit 53 is set
+              begin : norm_left
+                reg [107:0] q2;
+                reg [10:0]  shifts;
+                q2     = qr;
+                shifts = 0;
+                while (q2[53] == 0 && q2 != 0) begin
+                  q2     = q2 << 1;
+                  shifts = shifts + 1;
+                end
+                mr        = {1'b0, q2[53:1]};
+                guard     = q2[0];
+                round_bit = 1'b0;
+                sticky    = (rem != 0);
+                er        = er - shifts;
+              end
+            end
+
+            if (shift != -1) begin
+              if (guard && (round_bit || sticky || mr[0]))
+                mr = mr + 54'd1;
+
+              if (mr[53]) begin
+                mr = mr >> 1;
+                er = er + 1;
+              end
+
+              fp_div = {sr, er[10:0], mr[51:0]};
+            end
+          end
         end
-
-        sticky = (rem != 0) ? 1'b1 : 1'b0;
-
-        if (guard && (round_bit || sticky || mr[0]))
-          mr = mr + 54'd1;
-
-        if (mr[53]) begin
-          mr = mr >> 1;
-          er = er + 1;
-        end
-
-        fp_div = {sr, er, mr[51:0]};
       end
     end
   endfunction
