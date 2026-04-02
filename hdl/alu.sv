@@ -5,7 +5,6 @@ module alu (
     output reg [63:0] result
 );
 
-  // fp_add / fp_sub
   function automatic [63:0] fp_add;
     input [63:0] x, y;
     input do_sub;
@@ -17,15 +16,46 @@ module alu (
     reg [56:0] sum;
     reg [53:0] mr;
     reg        guard, round_bit, sticky;
+    reg        x_nan, y_nan, x_inf, y_inf, x_zero, y_zero;
     begin
       sx = x[63]; ex = x[62:52]; mx = {1'b1, x[51:0]};
       sy = y[63]; ey = y[62:52]; my = {1'b1, y[51:0]};
       sy = sy ^ do_sub;
 
-      if (ex == 0) begin
-        fp_add = {sy, ey, my[51:0]};
-      end else if (ey == 0) begin
-        fp_add = {sx, ex, mx[51:0]};
+      x_nan  = (ex == 11'h7FF) && (x[51:0] != 0);
+      y_nan  = (ey == 11'h7FF) && (y[51:0] != 0);
+      x_inf  = (ex == 11'h7FF) && (x[51:0] == 0);
+      y_inf  = (ey == 11'h7FF) && (y[51:0] == 0);
+      x_zero = (ex == 0)       && (x[51:0] == 0);
+      y_zero = (ey == 0)       && (y[51:0] == 0);
+
+      // NaN propagation
+      if (x_nan) begin
+        fp_add = x;
+      end else if (y_nan) begin
+        fp_add = {sy, ey, y[51:0]};  // propagate y NaN (with flipped sign if sub)
+
+      // Inf +/- Inf
+      end else if (x_inf && y_inf) begin
+        if (sx == sy)
+          fp_add = {sx, 11'h7FF, 52'd0};  // same sign => same inf
+        else
+          fp_add = 64'h7FF8000000000000;   // opposite => NaN
+
+      end else if (x_inf) begin
+        fp_add = {sx, 11'h7FF, 52'd0};
+      end else if (y_inf) begin
+        fp_add = {sy, 11'h7FF, 52'd0};
+
+      // Zero cases
+      end else if (x_zero && y_zero) begin
+        // (-0) + (-0) = -0, otherwise +0
+        fp_add = ((sx == 1) && (sy == 1)) ? 64'h8000000000000000 : 64'd0;
+      end else if (x_zero) begin
+        fp_add = {sy, ey, y[51:0]};
+      end else if (y_zero) begin
+        fp_add = {sx, ex, x[51:0]};
+
       end else begin
         if (ex >= ey) begin
           ediff = ex - ey;
@@ -51,7 +81,6 @@ module alu (
           fp_add = 64'd0;
         end else begin
           if (sum[55]) begin
-            // Carry: leading-1 at sum[55].  Shift right 1 => mr = sum[55:3].
             mr        = {1'b0, sum[55:3]};
             guard     = sum[2];
             round_bit = sum[1];
@@ -75,7 +104,6 @@ module alu (
           if (guard && (round_bit || sticky || mr[0]))
             mr = mr + 54'd1;
 
-          // mr[53] set means rounding overflowed into a 54th bit
           if (mr[53]) begin
             mr = mr >> 1;
             er = er + 1;
@@ -87,7 +115,6 @@ module alu (
     end
   endfunction
 
-  // fp_mul
 
   function automatic [63:0] fp_mul;
     input [63:0] x, y;
@@ -97,26 +124,47 @@ module alu (
     reg [105:0] prod;
     reg [53:0]  mr;
     reg         guard, round_bit, sticky;
+    reg         x_nan, y_nan, x_inf, y_inf, x_zero, y_zero;
     begin
       sx = x[63]; ex = x[62:52]; mx = {1'b1, x[51:0]};
       sy = y[63]; ey = y[62:52]; my = {1'b1, y[51:0]};
       sr = sx ^ sy;
 
-      if (ex == 0 || ey == 0) begin
-        fp_mul = 64'd0;
+      x_nan  = (ex == 11'h7FF) && (x[51:0] != 0);
+      y_nan  = (ey == 11'h7FF) && (y[51:0] != 0);
+      x_inf  = (ex == 11'h7FF) && (x[51:0] == 0);
+      y_inf  = (ey == 11'h7FF) && (y[51:0] == 0);
+      x_zero = (ex == 0)       && (x[51:0] == 0);
+      y_zero = (ey == 0)       && (y[51:0] == 0);
+
+      if (x_nan) begin
+        fp_mul = x;
+      end else if (y_nan) begin
+        fp_mul = y;
+
+      // Inf * 0 or 0 * Inf => NaN
+      end else if ((x_inf && y_zero) || (x_zero && y_inf)) begin
+        fp_mul = 64'h7FF8000000000000;
+
+      // Inf * anything => Inf (with correct sign)
+      end else if (x_inf || y_inf) begin
+        fp_mul = {sr, 11'h7FF, 52'd0};
+
+      // 0 * anything => signed zero
+      end else if (x_zero || y_zero) begin
+        fp_mul = {sr, 63'd0};
+
       end else begin
         er   = ex + ey - 11'd1023;
         prod = mx * my;
 
         if (prod[105]) begin
-          // leading-1 at prod[105]; shift right 1
           mr        = {1'b0, prod[105:53]};
           guard     = prod[52];
           round_bit = prod[51];
           sticky    = |prod[50:0];
           er        = er + 1;
         end else begin
-          // leading-1 at prod[104]
           mr        = {1'b0, prod[104:52]};
           guard     = prod[51];
           round_bit = prod[50];
@@ -137,7 +185,6 @@ module alu (
   endfunction
 
 
-//fp div
   function automatic [63:0] fp_div;
     input [63:0] x, y;
     reg        sx, sy, sr;
@@ -148,15 +195,48 @@ module alu (
     reg [107:0] rem;
     reg [ 53:0] mr;
     reg         guard, round_bit, sticky;
+    reg         x_nan, y_nan, x_inf, y_inf, x_zero, y_zero;
     begin
       sx = x[63]; ex = x[62:52]; mx = {1'b1, x[51:0]};
       sy = y[63]; ey = y[62:52]; my = {1'b1, y[51:0]};
       sr = sx ^ sy;
 
-      if (ey == 0) begin
-        fp_div = {sr, 11'h7FF, 52'd0};  // divide by zero => infinity
-      end else if (ex == 0) begin
-        fp_div = 64'd0;
+      x_nan  = (ex == 11'h7FF) && (x[51:0] != 0);
+      y_nan  = (ey == 11'h7FF) && (y[51:0] != 0);
+      x_inf  = (ex == 11'h7FF) && (x[51:0] == 0);
+      y_inf  = (ey == 11'h7FF) && (y[51:0] == 0);
+      x_zero = (ex == 0)       && (x[51:0] == 0);
+      y_zero = (ey == 0)       && (y[51:0] == 0);
+
+      if (x_nan) begin
+        fp_div = x;
+      end else if (y_nan) begin
+        fp_div = y;
+
+      // Inf / Inf => NaN
+      end else if (x_inf && y_inf) begin
+        fp_div = 64'h7FF8000000000000;
+
+      // 0 / 0 => NaN
+      end else if (x_zero && y_zero) begin
+        fp_div = 64'h7FF8000000000000;
+
+      // Inf / finite => Inf
+      end else if (x_inf) begin
+        fp_div = {sr, 11'h7FF, 52'd0};
+
+      // finite / Inf => 0
+      end else if (y_inf) begin
+        fp_div = {sr, 63'd0};
+
+      // finite / 0 => Inf
+      end else if (y_zero) begin
+        fp_div = {sr, 11'h7FF, 52'd0};
+
+      // 0 / finite => 0
+      end else if (x_zero) begin
+        fp_div = {sr, 63'd0};
+
       end else begin
         er  = ex - ey + 11'd1023;
         num = {mx, 55'd0};
@@ -164,14 +244,10 @@ module alu (
         rem = num % my;
 
         if (qr[54]) begin
-          // mx/my >= 1.0: leading-1 at qr[54]
-          // mr = qr[54:2], guard=qr[1], round=qr[0], er unchanged
           mr        = {1'b0, qr[54:2]};
           guard     = qr[1];
           round_bit = qr[0];
         end else begin
-          // mx/my < 1.0: leading-1 at qr[53]
-          // mr = qr[53:1], guard=qr[0], round=0, er -= 1
           mr        = {1'b0, qr[53:1]};
           guard     = qr[0];
           round_bit = 1'b0;
