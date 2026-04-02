@@ -14,7 +14,7 @@ module reg_file(
 
 reg [63:0] registers [0:31];
 
-// reads are combinational so the alu sees register values in the same cycle
+// alu sees reg values in the same cycle
 assign r1 = registers[raddr1];
 assign r2 = registers[raddr2];
 assign r3 = registers[raddr3];
@@ -25,7 +25,7 @@ always @(posedge clk) begin
     if (reset) begin
         for (i = 0; i < 31; i = i + 1)
             registers[i] <= 64'd0;
-        // tinker_core overwrites registers[31] with MEM_SIZE on the same reset edge
+        // tinker_core overwrites reg[31] with MEM_SIZE on reset edge
     end else if (write) begin
         registers[waddr] <= data;
     end
