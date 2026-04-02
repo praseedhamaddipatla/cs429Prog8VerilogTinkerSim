@@ -288,16 +288,13 @@ module testbench;
     end
   endtask
 
-  // -------------------------------------------------------
-  // Helper: run a single FDIV through the ALU and show internals
-  // Loads a and b into data memory, runs divf r4 = r2 / r3
-  // -------------------------------------------------------
+  // fdiv show internal stuff helper
   task run_fdiv_debug;
     input [63:0] a_bits;   // dividend (IEEE 754 bits)
     input [63:0] b_bits;   // divisor  (IEEE 754 bits)
     input [63:0] expected; // expected result bits
     input [63:0] test_num;
-    // internal fields we decode for printing
+    // internal fields for printing
     reg        sa, sb, sr_exp;
     reg [10:0] ea, eb;
     reg [51:0] fa, fb;
@@ -335,7 +332,7 @@ module testbench;
         $display("  >>> PASS <<<");
       else begin
         $display("  >>> FAIL <<<");
-        // Show what the exponent arithmetic should be
+        // exponent arithmetic
         $display("  --- manual trace ---");
         $display("  ea=%0d (0x%03h)  eb=%0d (0x%03h)", ea, ea, eb, eb);
         $display("  er = ea - eb + 1023 = %0d - %0d + 1023 = %0d (0x%03h)",
@@ -362,10 +359,7 @@ module testbench;
     @(posedge clk);
     reset = 0;
 
-    // ================================================================
-    // FDIV DEBUG SECTION
-    // Tests matching the autograder's known FDIV cases
-    // ================================================================
+    // fdiv debug section
     $display("\n=== FDIV DETAILED DEBUG ===\n");
 
     // Test #22 basic: 1.0 / 2.0 = 0.5
@@ -420,9 +414,7 @@ module testbench;
       36
     );
 
-    // ================================================================
-    // Original testbench tests below (unchanged)
-    // ================================================================
+    // orig test bench
 
     $display("\n--- reset state ---");
     do_reset();
