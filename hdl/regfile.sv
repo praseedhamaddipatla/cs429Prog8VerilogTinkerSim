@@ -26,6 +26,7 @@ always @(posedge clk) begin
         for (i = 0; i < 31; i = i + 1)
             registers[i] <= 64'd0;
         // overwrites reg[31] with MEM_SIZE on reset edge
+        registers[31] <= 64'd524288;
     end else if (write) begin
         registers[waddr] <= data;
     end

@@ -5,6 +5,4 @@ Name: Praseedha Maddipatla
 
 EID: psm2357
 
-To compile:./build.sh
-
-To run:./hw8
+To compile & run testbench:./build.sh
